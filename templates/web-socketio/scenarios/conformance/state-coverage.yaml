@@ -1,0 +1,17 @@
+# TODO: アプリに合わせて書き換える（ひな形。元は halpal の検証用リポジトリ）
+# すべての状態のキーに値が出るように、状態を作る（A-3）
+version: 1
+name: state-coverage
+steps:
+  - reset: { snapshot: initial }
+  - include: { file: two-players-start.yaml }
+  - bot: { users: [alice, bob], policy: random, seed: 5, until: end, timeout_ms: 180000 }
+  - settle: { quiet_ms: 500 }
+  - include: { file: two-players-start.yaml }
+  - bot: { users: [alice, bob], policy: random, seed: 6, max_moves: 3, timeout_ms: 60000 }
+  - settle: { quiet_ms: 500 }
+  - browser_open: { page: main }
+  - browser_fill: { page: main, selector: "#name", value: "screen-{run}" }
+  - browser_click: { page: main, selector: ".create-btn" }
+  - browser_wait: { page: main, selector: "#room-id-display", timeout_ms: 20000 }
+  - settle: { quiet_ms: 500 }

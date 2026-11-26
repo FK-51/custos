@@ -1,0 +1,4 @@
+version: 1
+name: probe-event
+steps:
+  - emit: { user: probe, event: showRooms, args: [{}], ack: true }

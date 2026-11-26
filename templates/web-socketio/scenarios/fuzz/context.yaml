@@ -1,0 +1,9 @@
+# TODO: アプリに合わせて書き換える（ひな形。元は halpal の検証用リポジトリ）
+# ファジングの準備：alice と bob が対局中、eve は部外者。{fuzz_member} は対局者、{fuzz_outsider} は部外者
+version: 1
+name: fuzz-context
+steps:
+  - include: { file: two-players-start.yaml }
+  - connect: { user: eve }
+  - emit: { user: eve, event: registPlayer, args: [{ name: "eve-{run}" }], save: { eve_token: "$[0].reconnectToken" } }
+  - set: { fuzz_member: alice, fuzz_outsider: eve, fuzz_victim_id: "{bob_id}", me_token: "{alice_token}" }

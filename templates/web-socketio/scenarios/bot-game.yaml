@@ -1,0 +1,20 @@
+# TODO: アプリに合わせて書き換える（ひな形。元は halpal の検証用リポジトリ）
+# 相手役のボットで1対局を最後まで回す（段階1の bot play、stage1）。{game} は対局の番号、{seed} はボットの乱数のシード
+version: 1
+name: bot-game
+steps:
+  - connect: { user: "a{game}" }
+  - emit: { user: "a{game}", event: registPlayer, args: [{ name: "a{game}-{run}" }], save: { a_id: "$[0].playerId" } }
+  - emit: { user: "a{game}", event: createRoom, args: [{ maxPlayers: 2 }], save: { room: "$[0].roomId" } }
+  - emit: { user: "a{game}", event: joinRoom, args: ["{room}"] }
+  - remember: { user: "a{game}", key: room, value: "{room}" }
+  - connect: { user: "b{game}" }
+  - emit: { user: "b{game}", event: registPlayer, args: [{ name: "b{game}-{run}" }], save: { b_id: "$[0].playerId" } }
+  - emit: { user: "b{game}", event: joinRoom, args: ["{room}"] }
+  - remember: { user: "b{game}", key: room, value: "{room}" }
+  - emit: { user: "a{game}", event: ready, args: [{ roomId: "{room}" }] }
+  - emit: { user: "b{game}", event: ready, args: [{ roomId: "{room}" }] }
+  - bot: { users: ["a{game}", "b{game}"], policy: random, seed: "{seed}", until: end, timeout_ms: 300000, stall_ms: 30000, save: bot }
+  - settle: { quiet_ms: 500, optional: true }
+  - disconnect: { user: "a{game}" }
+  - disconnect: { user: "b{game}" }

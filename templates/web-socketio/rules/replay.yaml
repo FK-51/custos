@@ -1,0 +1,9 @@
+# 手のログからの再生（設計書 第25.10節の「一致の検査」）。
+# ログの状態の写し（stateSnapshotJson。0手目、10手ごと、終局）から、次の写しまでの変化（changesJson）を、
+# アプリ自身の applyChanges で当て直し、次の写しと一致するかを確かめる（アプリのコンテナの中で、管理側から実行する）。
+version: 1
+log_sql: "SELECT gameSessionId, sequenceNumber, changesJson, stateSnapshotJson FROM GameLogAction ORDER BY gameSessionId, sequenceNumber"
+apply:
+  module: /app/packages/server/dist/domain/state/applyChange.js
+  function: applyChanges
+ignore_paths: []

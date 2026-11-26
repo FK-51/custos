@@ -1,0 +1,21 @@
+version: 1
+state:
+  player.name:            { type: string, per: player, source: { sql: "SELECT id, name FROM Player" } }
+  player.socket_id:       { type: id, per: player, source: { sql: "SELECT id, socketId FROM Player WHERE socketId IS NOT NULL" } }
+  player.reconnect_token: { type: string, per: player, source: { sql: "SELECT id, reconnectToken FROM Player WHERE reconnectToken IS NOT NULL" } }
+  room.name:              { type: string, per: room, source: { sql: "SELECT id, name FROM Room" } }
+  room.owner_id:          { type: id, per: room, source: { sql: "SELECT id, ownerId FROM Room" } }
+  room.playing:           { type: int, per: room, source: { sql: "SELECT id, playing FROM Room" } }
+  room.member_count:      { type: int, per: room, source: { sql: "SELECT r.id, COUNT(rp.playerId) FROM Room r LEFT JOIN RoomPlayer rp ON rp.roomId = r.id GROUP BY r.id" } }
+  game.move_count:        { type: int, per: game, source: { sql: "SELECT gameSessionId, COUNT(*) FROM GameLogAction GROUP BY gameSessionId" } }
+  game.winner:            { type: string, per: game, source: { sql: "SELECT id, winner FROM GameSession WHERE winner IS NOT NULL" } }
+  view.my_hands:          { type: list, per: player, source: { socket: { events: [yourTurn, anotherTurn], path: "$.now.myHands" } } }
+  view.my_played:         { type: list, per: player, source: { socket: { events: [yourTurn, anotherTurn], path: "$.now.myPlayed" } } }
+  view.turn_number:       { type: int, per: player, source: { socket: { events: [yourTurn, anotherTurn], path: "$.now.myTurnNumber" } } }
+  view.choices:           { type: list, per: player, source: { socket: { event: yourTurn, path: "$.choices" } } }
+  ui.room_id_display:     { type: string, per: page, source: { dom: { selector: "#room-id-display", read: text } } }
+determinism:
+  volatile: [player.socket_id, player.reconnect_token]
+  normalize: { ids: creation_order, sort: [] }
+  noise_check: { honest_runs: 3, undeclared_noise: report }
+  envelope_runs: 39

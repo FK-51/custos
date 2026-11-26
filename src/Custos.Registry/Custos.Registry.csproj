@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- バグの登録簿とコミットの管理（第20章） -->
+  <ItemGroup>
+    <ProjectReference Include="../Custos.Core/Custos.Core.csproj" />
+    <PackageReference Include="Microsoft.Data.Sqlite" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Custos.Registry.Tests" />
+  </ItemGroup>
+</Project>

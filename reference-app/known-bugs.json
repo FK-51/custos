@@ -1,0 +1,11 @@
+{
+  "_comment": "参照アプリに埋め込んだバグと、それを見つけるべき判定器（custos selftest が照合する）。目印はコードに書かず、ここにだけ書く。",
+  "bugs": [
+    { "id": "REF-1", "description": "playerChoice の値が null だと、処理されない例外でプロセスが落ちる", "judge": "fuzzer", "rule": "crash_input" },
+    { "id": "REF-2", "description": "再接続トークンが連番", "judge": "security_prober", "rule": "predictable_secret" },
+    { "id": "REF-3", "description": "送る状態に相手の手札（opponentHand）を含める", "judge": "sent_schema", "rule": "unknown_path" },
+    { "id": "REF-4", "description": "手札にない札も出せる（提示していない選択肢を受け付ける）", "judge": "phase_prober", "rule": "unoffered_choice_accepted" },
+    { "id": "REF-5", "description": "3回目の勝負の手のログの通し番号が1つ飛ぶ", "judge": "invariants", "rule": "log_sequence_contiguous" },
+    { "id": "REF-6", "description": "部屋の一覧で、部屋の名前を HTML として表示する（XSS）", "judge": "security_prober", "rule": "xss_executed" }
+  ]
+}

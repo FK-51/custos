@@ -1,0 +1,10 @@
+# テスト用API の単体テストを、対象アプリと同じ Node.js 20 で実行する。
+FROM node:20-slim@sha256:2cf067cfed83d5ea958367df9f966191a942351a2df77d6f0193e162b5febfc0
+WORKDIR /testapi
+COPY package.json package-lock.json ./
+RUN npm ci --no-audit --no-fund --ignore-scripts
+COPY index.js ./
+COPY lib ./lib
+COPY test ./test
+USER node
+CMD ["node", "--test", "--test-reporter=spec", "--test-timeout=60000", "test/testapi.test.js"]

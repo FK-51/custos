@@ -1,0 +1,24 @@
+version: 1
+invariants:
+  - id: log_sequence_contiguous
+    severity: high
+    stage: 1
+    category: progress
+    description: 手のログの通し番号に抜けや重複がない
+    sql: "SELECT gameSessionId FROM GameLogAction GROUP BY gameSessionId HAVING COUNT(*) <> MAX(sequenceNumber) + 1 OR MIN(sequenceNumber) <> 0"
+  - id: card_conservation
+    severity: high
+    stage: 1
+    category: conservation
+    description: 札の総数（山札 + 手札 + 場）が 10 枚から変わらない
+    sql: >
+      SELECT a.id FROM GameLogAction a WHERE a.stateSnapshotJson IS NOT NULL AND (
+        json_array_length(json_extract(a.stateSnapshotJson, '$.deck'))
+        + json_array_length(json_extract(a.stateSnapshotJson, '$.hands[0]')) + json_array_length(json_extract(a.stateSnapshotJson, '$.hands[1]'))
+        + json_array_length(json_extract(a.stateSnapshotJson, '$.played[0]')) + json_array_length(json_extract(a.stateSnapshotJson, '$.played[1]'))) <> 10
+  - id: offered_choices_not_empty
+    severity: high
+    stage: 1
+    category: progress
+    description: 選択を求めるときは、選択肢が1つ以上ある
+    sent_sql: "SELECT seq FROM sent WHERE event = 'yourTurn' AND json_array_length(json_extract(payload, '$.choices')) = 0"

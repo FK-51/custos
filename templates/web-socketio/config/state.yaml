@@ -1,0 +1,115 @@
+# TODO: アプリに合わせて書き換える（ひな形。元は halpal の検証用リポジトリ）
+# 状態スキーマ（設計書 第18.2節、第25.3節）。
+# source.sql は「対象ごとの ID と値」を返す SQL（読み取り専用で実行する）。
+# source.socket は、利用者ごとに最後に届いたイベントの最初の引数に path を当てて読む。
+# source.dom は、ブラウザの画面から読む。
+version: 1
+state:
+  # --- 登録した利用者（SQLite: Player）---
+  player.name:
+    type: string
+    per: player
+    source: { sql: "SELECT id, name FROM Player" }
+  player.socket_id:
+    type: id
+    per: player
+    source: { sql: "SELECT id, socketId FROM Player WHERE socketId IS NOT NULL" }
+  player.reconnect_token:
+    type: string
+    per: player
+    description: 再接続の本人確認に使う秘密の値（設計書 第25.6節の user_id にあたる）
+    source: { sql: "SELECT id, reconnectToken FROM Player WHERE reconnectToken IS NOT NULL" }
+  player.ready:
+    type: int
+    per: player
+    source: { sql: "SELECT id, ready FROM Player" }
+  # --- 部屋（Room、RoomPlayer）---
+  room.name:
+    type: string
+    per: room
+    source: { sql: "SELECT id, name FROM Room" }
+  room.owner_id:
+    type: id
+    per: room
+    source: { sql: "SELECT id, ownerId FROM Room" }
+  room.playing:
+    type: bool
+    per: room
+    source: { sql: "SELECT id, playing FROM Room" }
+  room.max_players:
+    type: int
+    per: room
+    source: { sql: "SELECT id, maxPlayers FROM Room" }
+  room.member_count:
+    type: int
+    per: room
+    source: { sql: "SELECT r.id, COUNT(rp.id) FROM Room r LEFT JOIN RoomPlayer rp ON rp.roomId = r.id GROUP BY r.id" }
+  # --- 対局と手のログ（GameSession、GameLogAction）---
+  game.move_count:
+    type: int
+    per: game
+    description: 手のログの件数
+    source: { sql: "SELECT gameSessionId, COUNT(*) FROM GameLogAction GROUP BY gameSessionId" }
+  game.last_sequence:
+    type: int
+    per: game
+    source: { sql: "SELECT gameSessionId, MAX(sequenceNumber) FROM GameLogAction GROUP BY gameSessionId" }
+  game.result:
+    type: string
+    per: game
+    source: { sql: "SELECT id, result FROM GameSession WHERE result IS NOT NULL" }
+  game.room_id:
+    type: id
+    per: game
+    source: { sql: "SELECT id, roomId FROM GameSession" }
+  # --- 送信された状態（Socket.IO の gameStateUpdate / yourTurn / anotherTurn の now）---
+  view.deck_count:
+    type: int
+    per: player
+    description: 山札の残り枚数（各利用者に送られた状態）
+    source: { socket: { events: [gameStateUpdate, yourTurn, anotherTurn], path: "$.now.cardNumber" } }
+  view.my_hands:
+    type: list
+    per: player
+    source: { socket: { events: [gameStateUpdate, yourTurn, anotherTurn], path: "$.now.myHands" } }
+  view.my_played:
+    type: list
+    per: player
+    source: { socket: { events: [gameStateUpdate, yourTurn, anotherTurn], path: "$.now.myPlayed" } }
+  view.turn_number:
+    type: int
+    per: player
+    source: { socket: { events: [gameStateUpdate, yourTurn, anotherTurn], path: "$.now.myTurnNumber" } }
+  view.phase:
+    type: string
+    per: player
+    source: { socket: { events: [gameStateUpdate, yourTurn, anotherTurn], path: "$.now.phase" } }
+  view.choice_kind:
+    type: string
+    per: player
+    description: サーバーが提示した選択の種類（第25.4節）
+    source: { socket: { event: yourTurn, path: "$.kind" } }
+  view.choices:
+    type: list
+    per: player
+    description: サーバーが提示した選択肢
+    source: { socket: { event: yourTurn, path: "$.choices" } }
+  view.deadline:
+    type: int
+    per: player
+    source: { socket: { event: yourTurn, path: "$.deadline" } }
+  # --- 画面（DOM）---
+  ui.room_id_display:
+    type: string
+    per: page
+    description: 待機画面に表示される部屋のID
+    source: { dom: { selector: "#room-id-display", read: text } }
+determinism:
+  volatile: [player.socket_id, player.reconnect_token, view.deadline]
+  normalize:
+    ids: creation_order
+    sort: []
+  noise_check:
+    honest_runs: 3
+    undeclared_noise: report
+  envelope_runs: 39

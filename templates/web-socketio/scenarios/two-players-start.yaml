@@ -1,0 +1,20 @@
+# TODO: アプリに合わせて書き換える（ひな形。元は halpal の検証用リポジトリ）
+# 2人の利用者で、登録、部屋の作成、参加、対局の開始まで（指示書 タスク6 の完了の確認）
+version: 1
+name: two-players-start
+description: スクリプトだけで、部屋の作成、参加、対局の開始を行う
+steps:
+  - connect: { user: alice }
+  - emit: { user: alice, event: registPlayer, args: [{ name: "alice-{run}" }], save: { alice_id: "$[0].playerId", alice_token: "$[0].reconnectToken" } }
+  - emit: { user: alice, event: createRoom, args: [{ maxPlayers: 2 }], save: { room: "$[0].roomId" } }
+  - emit: { user: alice, event: joinRoom, args: ["{room}"], save: { join_a: "$[0].success" } }
+  - remember: { user: alice, key: room, value: "{room}" }
+  - connect: { user: bob }
+  - emit: { user: bob, event: registPlayer, args: [{ name: "bob-{run}" }], save: { bob_id: "$[0].playerId", bob_token: "$[0].reconnectToken" } }
+  - emit: { user: bob, event: joinRoom, args: ["{room}"], save: { join_b: "$[0].success" } }
+  - remember: { user: bob, key: room, value: "{room}" }
+  - emit: { user: alice, event: ready, args: [{ roomId: "{room}" }] }
+  - emit: { user: bob, event: ready, args: [{ roomId: "{room}" }] }
+  - wait: { user: alice, event: startGame, timeout_ms: 10000, optional: true }
+  - settle: { quiet_ms: 300 }
+  - expect: { state: room.member_count, entity: "{room}", equals: 2 }

@@ -1,0 +1,25 @@
+# TODO: アプリに合わせて書き換える（ひな形。元は halpal の検証用リポジトリ）
+# イベントごとの値の見本（ファジングと局面の検査で、崩す元・送る値として使う）。{me_token} は送り手自身のトークン
+version: 1
+name: templates
+steps:
+  - emit: { event: registPlayer, args: [{ name: "fz-{run}" }] }
+  - emit: { event: createRoom, args: [{ maxPlayers: 2, roomName: "fz" }] }
+  - emit: { event: joinRoom, args: ["{room}"] }
+  - emit: { event: showRooms, args: [{ maxPlayers: 2 }] }
+  - emit: { event: spectateRoom, args: [{ roomId: "{room}" }] }
+  - emit: { event: leaveSpectate, args: [{ roomId: "{room}" }] }
+  - emit: { event: deleteRoom, args: [{ roomId: "{room}" }] }
+  - emit: { event: changeSocketid, args: [{ token: "{me_token}", roomId: "{room}" }] }
+  - emit: { event: getPlayerNames, args: [{ roomId: "{room}" }] }
+  - emit: { event: getPermissionClass, args: [{ roomId: "{room}" }] }
+  - emit: { event: checkGameStatus, args: [{ roomId: "{room}" }] }
+  - emit: { event: startGame, args: ["{room}"] }
+  - emit: { event: ready, args: [{ roomId: "{room}" }] }
+  - emit: { event: playerChoice, args: [{ roomId: "{room}", choice: 1 }] }
+  - emit: { event: playerSurrender, args: [{ roomId: "{room}" }] }
+  - emit: { event: requestRematch, args: [{ roomId: "{room}" }] }
+  - emit: { event: returnToLobby, args: [{ roomId: "{room}" }] }
+  - emit: { event: identifyResultPage, args: [{ roomId: "{room}" }] }
+  - emit: { event: cardEffectAck, args: [{ roomId: "{room}" }] }
+  - emit: { event: playerAction, args: ["{room}", { type: "noop" }] }

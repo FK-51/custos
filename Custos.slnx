@@ -1,0 +1,23 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Custos.Agent.Browser/Custos.Agent.Browser.csproj" />
+    <Project Path="src/Custos.Agent.Client/Custos.Agent.Client.csproj" />
+    <Project Path="src/Custos.Agent.Common/Custos.Agent.Common.csproj" />
+    <Project Path="src/Custos.Agent.Ops/Custos.Agent.Ops.csproj" />
+    <Project Path="src/Custos.Agent.Proxy/Custos.Agent.Proxy.csproj" />
+    <Project Path="src/Custos.Analyzers/Custos.Analyzers.csproj" />
+    <Project Path="src/Custos.Cli/Custos.Cli.csproj" />
+    <Project Path="src/Custos.Core/Custos.Core.csproj" />
+    <Project Path="src/Custos.Protocol/Custos.Protocol.csproj" />
+    <Project Path="src/Custos.Registry/Custos.Registry.csproj" />
+    <Project Path="src/Custos.SocketIO.Wire/Custos.SocketIO.Wire.csproj" />
+    <Project Path="src/Custos.Statistics/Custos.Statistics.csproj" />
+    <Project Path="src/Custos.Web.SocketIO/Custos.Web.SocketIO.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Custos.Core.Tests/Custos.Core.Tests.csproj" />
+    <Project Path="tests/Custos.Registry.Tests/Custos.Registry.Tests.csproj" />
+    <Project Path="tests/Custos.Statistics.Tests/Custos.Statistics.Tests.csproj" />
+    <Project Path="tests/Custos.Web.SocketIO.Tests/Custos.Web.SocketIO.Tests.csproj" />
+  </Folder>
+</Solution>

@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Socket.IO のスクリプトクライアント（相手役のボット、攻撃、負荷で共用）。利用者側のネットワークにだけつなぐ。 -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>custos-client</AssemblyName>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Custos.Agent.Common/Custos.Agent.Common.csproj" />
+    <ProjectReference Include="../Custos.SocketIO.Wire/Custos.SocketIO.Wire.csproj" />
+    <PackageReference Include="SocketIOClient" />
+  </ItemGroup>
+</Project>

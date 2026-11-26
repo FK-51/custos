@@ -1,0 +1,10 @@
+# 対象アプリの宣言（設計書 第18.1節）
+version: 1
+name: halpal
+platform: web
+criticality: low          # 個人情報も課金もない（第25.1節、第26.2節）
+required_maturity: 2      # 最初のリリースはレベル2（第26.9節）
+test_api: none            # 段階0・1ではアプリのコードを変えない。テスト用APIなしとして動く（第24.6節）
+test_api_port: 3999       # 段階2のテスト用ビルドで使う管理用のポート（利用者側からは届かない）
+adapter: web-socketio
+description: Node.js + Socket.IO + SQLite（Prisma）のターン制カードゲーム。Next.js の画面と同じコンテナで動く

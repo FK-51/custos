@@ -1,0 +1,9 @@
+# TODO: アプリに合わせて書き換える（ひな形。元は halpal の検証用リポジトリ）
+# 画面を変える操作（C-2）：ロビーで名前を入れて部屋を作り、待機画面に移る
+version: 1
+name: screen-change
+steps:
+  - browser_fill: { page: "{page}", selector: "#name", value: "shot-{run}" }
+  - browser_click: { page: "{page}", selector: ".create-btn" }
+  - browser_wait: { page: "{page}", selector: "#room-id-display", timeout_ms: 20000 }
+  - sleep: { ms: 800 }

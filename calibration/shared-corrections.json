@@ -1,0 +1,5 @@
+{
+  "_comment": "プロジェクトをまたいで共有する、層ごとの校正の集計値（設計書 第19.10節）。バグの中身は入れない。custos calibrate --share で追記する。",
+  "version": 1,
+  "entries": []
+}

@@ -1,0 +1,10 @@
+# 参照アプリ（フレームワークの回帰テスト用。設計書 第12.5節）
+version: 1
+name: custos-reference-app
+platform: web
+criticality: low
+required_maturity: 1
+test_api: none
+test_api_port: 3999
+adapter: web-socketio
+description: 既知のバグを埋め込んだ小さなターン制カードゲーム（Node 22 + Socket.IO + node:sqlite）

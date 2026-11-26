@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- 記録用のプロキシ（利用者側とアプリ側の間）。通信の内容とヘッダーを変えずに中継し、記録する。 -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>custos-proxy</AssemblyName>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Custos.Agent.Common/Custos.Agent.Common.csproj" />
+    <ProjectReference Include="../Custos.SocketIO.Wire/Custos.SocketIO.Wire.csproj" />
+  </ItemGroup>
+</Project>

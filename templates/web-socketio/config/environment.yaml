@@ -1,0 +1,47 @@
+# TODO: アプリに合わせて書き換える（ひな形。元は halpal の検証用リポジトリ）
+# ノード構成とリソースプロファイル（設計書 第13.2節、第18.6節、第26.5節）
+version: 1
+project: halpal            # 本番の compose（-p halpal）と同じプロジェクト名にする
+public_endpoint:
+  host: dev.shigenoki.com  # 利用者側から見たアプリのホスト名。本番と同じ名前にし、検証環境と分かる名前にしない
+  port: 13000              # 本番（staging.compose.yml）の公開ポート
+app:
+  build:
+    context: "${APP_REPO}"  # 対象アプリのリポジトリ（読むだけ）
+    dockerfile: Dockerfile   # アプリの Dockerfile をそのまま使う
+  image_pins:
+    "node:20-slim": "sha256:2cf067cfed83d5ea958367df9f966191a942351a2df77d6f0193e162b5febfc0"
+  environment:
+    NODE_ENV: production     # staging.compose.yml と同じ。検証用の値を足さない
+  command: ["npm", "start"]  # staging.compose.yml と同じ
+  port: 3001                 # Next.js（画面）。/socket.io/ と /api/ は rewrites で 3000 へ中継される
+  server_port: 3000          # ゲームサーバー（Express + Socket.IO）
+  data_dir: /app/packages/server/prisma
+  db_file: halpal.db
+  health_path: /
+  socketio_path: /socket.io          # 公式のクライアントの要求のパス（BUG-0003 の修正後は末尾の / なし。元のアプリは /socket.io/）
+  user: node
+  test_build_dockerfile: environment/testbuild/Dockerfile
+nodes:
+  honest_clients: 1
+  attacker_clients: 1
+  browsers: 1
+  sandbox: true
+egress_allow: ["api.anthropic.com:443"]
+resource_profiles:
+  mini-1:
+    target: local
+    nodes:
+      app:  { cpus: 1, cpuset: "0", memory: 1GB, disk_iops: 1000 }
+      load: { cpus: 3, cpuset: "1-3" }
+    network: { bandwidth: 20Mbps, latency: 30ms, jitter: 10ms, loss: 0.5% }
+    validity:
+      load_cpu_max: 70%
+      send_lag_p99_max: 2%
+      reference_drift_max: 3%
+      swap: none
+      cpu_steal_max: 5%
+      steady_state_check: true
+      runs: 5
+      detect_regression: 20%   # ターン制で応答時間への要求が緩い（第26.4節）
+      max_cv: 10%

@@ -1,0 +1,6 @@
+# TODO: アプリに合わせて書き換える（ひな形。元は halpal の検証用リポジトリ）
+# 記録の確認（C-4）に使う、副作用のないイベント（部屋の一覧。確認応答あり）
+version: 1
+name: probe-event
+steps:
+  - emit: { user: probe, event: showRooms, args: [{ maxPlayers: 4 }], ack: true }

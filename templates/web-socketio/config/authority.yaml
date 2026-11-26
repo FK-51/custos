@@ -1,0 +1,112 @@
+# TODO: アプリに合わせて書き換える（ひな形。元は halpal の検証用リポジトリ）
+# 権威マップ（設計書 第15章、第18.3節、第25.4〜25.6節）
+version: 1
+actors: [owner, member, current_player, other_player, outsider, spectator, anonymous]
+
+defaults:                 # 宣言のない状態キーは最も厳しい扱い
+  authority: server
+  validation: full
+  scope: economy
+
+state:
+  player.name:            { authority: client, validation: plausibility, scope: visible_to_others, visibility: all }
+  player.socket_id:       { authority: server, validation: full, scope: persisted, visibility: members }
+  player.reconnect_token: { authority: server, validation: full, scope: persisted, visibility: owner }   # 本人にだけ送ってよい
+  player.ready:           { authority: server, validation: full, scope: persisted, visibility: members }
+  room.name:              { authority: client, validation: plausibility, scope: visible_to_others, visibility: all }
+  room.owner_id:          { authority: server, validation: full, scope: persisted, visibility: members }
+  room.playing:           { authority: server, validation: full, scope: persisted, visibility: all }
+  room.max_players:       { authority: server, validation: full, scope: persisted, visibility: all }
+  room.member_count:      { authority: server, validation: full, scope: persisted, visibility: all }
+  game.move_count:        { authority: server, validation: full, scope: economy, visibility: none }
+  game.last_sequence:     { authority: server, validation: full, scope: economy, visibility: none }
+  game.result:            { authority: server, validation: full, scope: economy, visibility: members }
+  game.room_id:           { authority: server, validation: full, scope: persisted, visibility: members }
+  view.deck_count:        { authority: server, validation: full, scope: economy, visibility: members }
+  view.my_hands:          { authority: server, validation: full, scope: economy, visibility: owner }     # 手札は本人にだけ
+  view.my_played:         { authority: server, validation: full, scope: economy, visibility: members }
+  view.turn_number:       { authority: server, validation: full, scope: economy, visibility: members }
+  view.phase:             { authority: server, validation: full, scope: economy, visibility: members }
+  view.choice_kind:       { authority: server, validation: full, scope: economy, visibility: owner }
+  view.choices:           { authority: server, validation: full, scope: economy, visibility: owner }     # trash の選択肢は相手の手札そのもの
+  view.deadline:          { authority: server, validation: full, scope: economy, visibility: members }
+  ui.room_id_display:     { authority: server, validation: full, scope: self, visibility: members }
+
+ownership:
+  room:
+    owner: room.owner_id
+    read: [owner, member, outsider, spectator]
+    write: [owner]                 # 削除できるのはオーナーだけ
+  player:
+    owner: player.socket_id
+    read: [owner]
+    write: [owner]
+
+inputs:                            # イベント名ごとに受け取ってよい値（第25.4節）。書いていない値は「受け取ってはいけない値」として検査する
+  "event registPlayer":   { accepts: [name] }
+  "event createRoom":     { accepts: [maxPlayers, roomName] }
+  "event joinRoom":       { accepts: [] }              # 引数は部屋のIDまたは名前の文字列
+  "event showRooms":      { accepts: [maxPlayers] }
+  "event spectateRoom":   { accepts: [roomId] }
+  "event leaveSpectate":  { accepts: [roomId] }
+  "event deleteRoom":     { accepts: [roomId] }
+  "event changeSocketid": { accepts: [token, roomId] }
+  "event getPlayerNames": { accepts: [roomId] }
+  "event getPermissionClass": { accepts: [roomId] }
+  "event checkGameStatus": { accepts: [roomId] }
+  "event startGame":      { accepts: [] }              # 引数は部屋のIDの文字列
+  "event ready":          { accepts: [roomId, vsCpu] }
+  "event playerChoice":   { accepts: [roomId, choice] }
+  "event playerSurrender": { accepts: [roomId] }
+  "event requestRematch": { accepts: [roomId] }
+  "event returnToLobby":  { accepts: [roomId] }
+  "event identifyResultPage": { accepts: [roomId] }
+  "event cardEffectAck":  { accepts: [roomId] }
+  "event playerAction":   { accepts: [] }              # 型の宣言にないイベント（SocketEventRouter に残っている）
+
+phases:                            # 局面ごとに、誰がどのイベントを送ってよいか（第25.4節）。anyone はその局面の誰でも
+  lobby:
+    allowed:
+      anyone: [registPlayer, createRoom, joinRoom, showRooms, spectateRoom, leaveSpectate]
+  waiting:
+    allowed:
+      anyone: [registPlayer, createRoom, showRooms, spectateRoom, leaveSpectate, getPermissionClass]
+      owner: [joinRoom, ready, deleteRoom, getPlayerNames, checkGameStatus, startGame, changeSocketid]
+      member: [joinRoom, ready, getPlayerNames, checkGameStatus, startGame, changeSocketid]
+      outsider: [joinRoom]           # 空きがあれば入れる（満員なら拒否されるべき。定員は不変条件 room_capacity で見る）
+  playing:
+    allowed:
+      anyone: [registPlayer, createRoom, showRooms, spectateRoom, leaveSpectate, getPermissionClass]
+      current_player: [playerChoice, cardEffectAck, playerSurrender, getPlayerNames, checkGameStatus, changeSocketid]
+      other_player: [cardEffectAck, playerSurrender, getPlayerNames, checkGameStatus, changeSocketid]
+  finished:
+    allowed:
+      anyone: [registPlayer, createRoom, joinRoom, showRooms, spectateRoom, leaveSpectate, getPermissionClass]
+      owner: [identifyResultPage, requestRematch, returnToLobby, getPlayerNames, checkGameStatus, changeSocketid, cardEffectAck, deleteRoom]
+      member: [identifyResultPage, requestRematch, returnToLobby, getPlayerNames, checkGameStatus, changeSocketid, cardEffectAck]
+
+sent:                              # サーバーから送ってよい項目（一覧にない項目は「未知の項目」として報告する）
+  yourTurn:
+    paths: ["$.now", "$.choices", "$.kind", "$.deadline"]
+  anotherTurn:
+    paths: ["$.choice", "$.kind", "$.now", "$.guessedCard", "$.isBarriered", "$.deadline"]
+  gameStateUpdate:
+    paths: ["$.now"]
+  cardEffectResult:
+    paths: ["$.cardNumber", "$.playerIndex", "$.isBarriered", "$.targetPlayer", "$.effectDetail", "$.detailVisibleTo", "$.lifeEvents", "$.isDraw"]
+  startGame:
+    paths: ["$.players"]
+  redirectToResult:
+    paths: ["$.url"]
+  waitingForOpponent:
+    paths: ["$.roomId"]
+  hideWaitingInfo:
+    paths: []
+  roomCleaned:
+    paths: ["$.roomId"]
+  matchScore:
+    paths: ["$.scores", "$.draws"]
+  spectatorStateUpdate:
+    paths: ["$.now"]
+  spectatorEvent:
+    paths: ["$.kind", "$.turnNumber", "$.cardNumber", "$.isBarriered", "$.defeated", "$.revived", "$.winners", "$.losers", "$.reason"]

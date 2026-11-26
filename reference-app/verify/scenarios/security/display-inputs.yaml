@@ -1,0 +1,11 @@
+version: 1
+name: display-inputs
+steps:
+  - connect: { user: mallory, via: attacker }
+  - emit: { user: mallory, via: attacker, event: registPlayer, args: [{ name: "{payload}" }], ack: true }
+  - emit: { user: mallory, via: attacker, event: createRoom, args: [{ roomName: "{payload}" }], save: { room: "$[0].roomId" } }
+  - browser_open: { page: victim }
+  - browser_wait: { page: victim, selector: "#name", timeout_ms: 20000 }
+  - browser_click: { page: victim, selector: ".show-rooms-btn" }
+  - sleep: { ms: 1500 }
+  - set: { pages: [victim] }

@@ -1,0 +1,17 @@
+# TODO: アプリに合わせて書き換える（ひな形。元は halpal の検証用リポジトリ）
+# 局面 waiting：alice が部屋を作り、bob が入った（まだ ready ではない）。eve は登録済みの部外者、anon は未登録
+version: 1
+name: phase-waiting
+steps:
+  - connect: { user: alice }
+  - emit: { user: alice, event: registPlayer, args: [{ name: "alice-{run}" }], save: { alice_token: "$[0].reconnectToken" } }
+  - emit: { user: alice, event: createRoom, args: [{ maxPlayers: 2 }], save: { room: "$[0].roomId" } }
+  - emit: { user: alice, event: joinRoom, args: ["{room}"] }
+  - connect: { user: bob }
+  - emit: { user: bob, event: registPlayer, args: [{ name: "bob-{run}" }], save: { bob_token: "$[0].reconnectToken" } }
+  - emit: { user: bob, event: joinRoom, args: ["{room}"] }
+  - connect: { user: eve }
+  - emit: { user: eve, event: registPlayer, args: [{ name: "eve-{run}" }], save: { eve_token: "$[0].reconnectToken" } }
+  - connect: { user: anon }
+  - settle: { quiet_ms: 300 }
+  - set: { actors: { owner: alice, member: bob, outsider: eve, anonymous: anon } }

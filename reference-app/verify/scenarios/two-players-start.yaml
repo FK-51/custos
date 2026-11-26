@@ -1,0 +1,16 @@
+version: 1
+name: two-players-start
+steps:
+  - connect: { user: alice }
+  - emit: { user: alice, event: registPlayer, args: [{ name: "alice-{run}" }], save: { alice_id: "$[0].playerId", alice_token: "$[0].reconnectToken" } }
+  - emit: { user: alice, event: createRoom, args: [{ roomName: "r-{run}" }], save: { room: "$[0].roomId" } }
+  - emit: { user: alice, event: joinRoom, args: ["{room}"], save: { join_a: "$[0].success" } }
+  - remember: { user: alice, key: room, value: "{room}" }
+  - connect: { user: bob }
+  - emit: { user: bob, event: registPlayer, args: [{ name: "bob-{run}" }], save: { bob_id: "$[0].playerId", bob_token: "$[0].reconnectToken" } }
+  - emit: { user: bob, event: joinRoom, args: ["{room}"], save: { join_b: "$[0].success" } }
+  - remember: { user: bob, key: room, value: "{room}" }
+  - emit: { user: alice, event: ready, args: [{ roomId: "{room}" }] }
+  - emit: { user: bob, event: ready, args: [{ roomId: "{room}" }] }
+  - wait: { user: alice, event: yourTurn, timeout_ms: 10000, optional: true }
+  - settle: { quiet_ms: 300 }

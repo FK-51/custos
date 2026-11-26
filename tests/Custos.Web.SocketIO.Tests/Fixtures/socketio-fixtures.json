@@ -1,0 +1,1345 @@
+{
+  "generator": {
+    "node": "v20.20.2",
+    "socket.io-parser": "4.2.7",
+    "engine.io-parser": "5.2.3",
+    "engine.io-protocol": 4
+  },
+  "socketio_packets": [
+    {
+      "name": "event-string",
+      "encoded": [
+        {
+          "text": "2[\"hello\",\"world\"]"
+        }
+      ],
+      "decoded": {
+        "type": "event",
+        "nsp": "/",
+        "id": null,
+        "data": [
+          "hello",
+          "world"
+        ],
+        "attachments": 0
+      }
+    },
+    {
+      "name": "event-name-only",
+      "encoded": [
+        {
+          "text": "2[\"ping-like\"]"
+        }
+      ],
+      "decoded": {
+        "type": "event",
+        "nsp": "/",
+        "id": null,
+        "data": [
+          "ping-like"
+        ],
+        "attachments": 0
+      }
+    },
+    {
+      "name": "event-number",
+      "encoded": [
+        {
+          "text": "2[\"num\",42,-1.5,0]"
+        }
+      ],
+      "decoded": {
+        "type": "event",
+        "nsp": "/",
+        "id": null,
+        "data": [
+          "num",
+          42,
+          -1.5,
+          0
+        ],
+        "attachments": 0
+      }
+    },
+    {
+      "name": "event-large-numbers",
+      "encoded": [
+        {
+          "text": "2[\"n\",9007199254740991,1e-7,1.7976931348623157e+308,0]"
+        }
+      ],
+      "decoded": {
+        "type": "event",
+        "nsp": "/",
+        "id": null,
+        "data": [
+          "n",
+          9007199254740991,
+          1e-7,
+          1.7976931348623157e+308,
+          0
+        ],
+        "attachments": 0
+      }
+    },
+    {
+      "name": "event-boolean-null",
+      "encoded": [
+        {
+          "text": "2[\"flags\",true,false,null]"
+        }
+      ],
+      "decoded": {
+        "type": "event",
+        "nsp": "/",
+        "id": null,
+        "data": [
+          "flags",
+          true,
+          false,
+          null
+        ],
+        "attachments": 0
+      }
+    },
+    {
+      "name": "event-nested-object",
+      "encoded": [
+        {
+          "text": "2[\"obj\",{\"a\":{\"b\":[1,2,{\"c\":\"d\"}]},\"e\":null}]"
+        }
+      ],
+      "decoded": {
+        "type": "event",
+        "nsp": "/",
+        "id": null,
+        "data": [
+          "obj",
+          {
+            "a": {
+              "b": [
+                1,
+                2,
+                {
+                  "c": "d"
+                }
+              ]
+            },
+            "e": null
+          }
+        ],
+        "attachments": 0
+      }
+    },
+    {
+      "name": "event-array",
+      "encoded": [
+        {
+          "text": "2[\"arr\",[1,\"two\",[3,[4]]]]"
+        }
+      ],
+      "decoded": {
+        "type": "event",
+        "nsp": "/",
+        "id": null,
+        "data": [
+          "arr",
+          [
+            1,
+            "two",
+            [
+              3,
+              [
+                4
+              ]
+            ]
+          ]
+        ],
+        "attachments": 0
+      }
+    },
+    {
+      "name": "event-japanese",
+      "encoded": [
+        {
+          "text": "2[\"メッセージ\",{\"名前\":\"テスト🎴\",\"説明\":\"全角　スペース\"}]"
+        }
+      ],
+      "decoded": {
+        "type": "event",
+        "nsp": "/",
+        "id": null,
+        "data": [
+          "メッセージ",
+          {
+            "名前": "テスト🎴",
+            "説明": "全角　スペース"
+          }
+        ],
+        "attachments": 0
+      }
+    },
+    {
+      "name": "event-empty-containers",
+      "encoded": [
+        {
+          "text": "2[\"empty\",[],{},\"\"]"
+        }
+      ],
+      "decoded": {
+        "type": "event",
+        "nsp": "/",
+        "id": null,
+        "data": [
+          "empty",
+          [],
+          {},
+          ""
+        ],
+        "attachments": 0
+      }
+    },
+    {
+      "name": "event-escapes",
+      "encoded": [
+        {
+          "text": "2[\"s\",\"quote\\\" backslash\\\\ newline\\n tab\\t ctrl\\u0001 rs\\u001e end\"]"
+        }
+      ],
+      "decoded": {
+        "type": "event",
+        "nsp": "/",
+        "id": null,
+        "data": [
+          "s",
+          "quote\" backslash\\ newline\n tab\t ctrl\u0001 rs\u001e end"
+        ],
+        "attachments": 0
+      }
+    },
+    {
+      "name": "event-proto-keys",
+      "encoded": [
+        {
+          "text": "2[\"p\",{\"__proto__\":{\"polluted\":true},\"constructor\":{\"prototype\":{}}}]"
+        }
+      ],
+      "decoded": {
+        "type": "event",
+        "nsp": "/",
+        "id": null,
+        "data": [
+          "p",
+          {
+            "__proto__": {
+              "polluted": true
+            },
+            "constructor": {
+              "prototype": {}
+            }
+          }
+        ],
+        "attachments": 0
+      }
+    },
+    {
+      "name": "event-halpal-player-choice",
+      "encoded": [
+        {
+          "text": "2[\"playerChoice\",{\"roomId\":\"room-AbCdEf123\",\"choice\":3}]"
+        }
+      ],
+      "decoded": {
+        "type": "event",
+        "nsp": "/",
+        "id": null,
+        "data": [
+          "playerChoice",
+          {
+            "roomId": "room-AbCdEf123",
+            "choice": 3
+          }
+        ],
+        "attachments": 0
+      }
+    },
+    {
+      "name": "event-with-ack-id",
+      "encoded": [
+        {
+          "text": "212[\"ask\",{\"q\":1}]"
+        }
+      ],
+      "decoded": {
+        "type": "event",
+        "nsp": "/",
+        "id": 12,
+        "data": [
+          "ask",
+          {
+            "q": 1
+          }
+        ],
+        "attachments": 0
+      }
+    },
+    {
+      "name": "event-with-ack-id-0",
+      "encoded": [
+        {
+          "text": "20[\"registPlayer\",{\"name\":\"alice\"}]"
+        }
+      ],
+      "decoded": {
+        "type": "event",
+        "nsp": "/",
+        "id": 0,
+        "data": [
+          "registPlayer",
+          {
+            "name": "alice"
+          }
+        ],
+        "attachments": 0
+      }
+    },
+    {
+      "name": "event-with-large-ack-id",
+      "encoded": [
+        {
+          "text": "2123456789[\"x\"]"
+        }
+      ],
+      "decoded": {
+        "type": "event",
+        "nsp": "/",
+        "id": 123456789,
+        "data": [
+          "x"
+        ],
+        "attachments": 0
+      }
+    },
+    {
+      "name": "ack",
+      "encoded": [
+        {
+          "text": "312[{\"ok\":true}]"
+        }
+      ],
+      "decoded": {
+        "type": "ack",
+        "nsp": "/",
+        "id": 12,
+        "data": [
+          {
+            "ok": true
+          }
+        ],
+        "attachments": 0
+      }
+    },
+    {
+      "name": "ack-empty",
+      "encoded": [
+        {
+          "text": "35[]"
+        }
+      ],
+      "decoded": {
+        "type": "ack",
+        "nsp": "/",
+        "id": 5,
+        "data": [],
+        "attachments": 0
+      }
+    },
+    {
+      "name": "ack-multiple-values",
+      "encoded": [
+        {
+          "text": "32[\"a\",1,null,{\"b\":[]}]"
+        }
+      ],
+      "decoded": {
+        "type": "ack",
+        "nsp": "/",
+        "id": 2,
+        "data": [
+          "a",
+          1,
+          null,
+          {
+            "b": []
+          }
+        ],
+        "attachments": 0
+      }
+    },
+    {
+      "name": "namespace-event",
+      "encoded": [
+        {
+          "text": "2/admin,[\"x\",1]"
+        }
+      ],
+      "decoded": {
+        "type": "event",
+        "nsp": "/admin",
+        "id": null,
+        "data": [
+          "x",
+          1
+        ],
+        "attachments": 0
+      }
+    },
+    {
+      "name": "namespace-event-with-ack",
+      "encoded": [
+        {
+          "text": "2/admin,3[\"y\"]"
+        }
+      ],
+      "decoded": {
+        "type": "event",
+        "nsp": "/admin",
+        "id": 3,
+        "data": [
+          "y"
+        ],
+        "attachments": 0
+      }
+    },
+    {
+      "name": "namespace-ack",
+      "encoded": [
+        {
+          "text": "3/admin,3[\"done\"]"
+        }
+      ],
+      "decoded": {
+        "type": "ack",
+        "nsp": "/admin",
+        "id": 3,
+        "data": [
+          "done"
+        ],
+        "attachments": 0
+      }
+    },
+    {
+      "name": "connect-default",
+      "encoded": [
+        {
+          "text": "0"
+        }
+      ],
+      "decoded": {
+        "type": "connect",
+        "nsp": "/",
+        "id": null,
+        "data": null,
+        "attachments": 0
+      }
+    },
+    {
+      "name": "connect-with-auth",
+      "encoded": [
+        {
+          "text": "0{\"token\":\"t-123\"}"
+        }
+      ],
+      "decoded": {
+        "type": "connect",
+        "nsp": "/",
+        "id": null,
+        "data": {
+          "token": "t-123"
+        },
+        "attachments": 0
+      }
+    },
+    {
+      "name": "connect-namespace",
+      "encoded": [
+        {
+          "text": "0/admin,"
+        }
+      ],
+      "decoded": {
+        "type": "connect",
+        "nsp": "/admin",
+        "id": null,
+        "data": null,
+        "attachments": 0
+      }
+    },
+    {
+      "name": "connect-namespace-with-auth",
+      "encoded": [
+        {
+          "text": "0/admin,{\"token\":\"x\"}"
+        }
+      ],
+      "decoded": {
+        "type": "connect",
+        "nsp": "/admin",
+        "id": null,
+        "data": {
+          "token": "x"
+        },
+        "attachments": 0
+      }
+    },
+    {
+      "name": "connect-server-response",
+      "encoded": [
+        {
+          "text": "0{\"sid\":\"Xy1-AbC_dEf23\"}"
+        }
+      ],
+      "decoded": {
+        "type": "connect",
+        "nsp": "/",
+        "id": null,
+        "data": {
+          "sid": "Xy1-AbC_dEf23"
+        },
+        "attachments": 0
+      }
+    },
+    {
+      "name": "disconnect-default",
+      "encoded": [
+        {
+          "text": "1"
+        }
+      ],
+      "decoded": {
+        "type": "disconnect",
+        "nsp": "/",
+        "id": null,
+        "data": null,
+        "attachments": 0
+      }
+    },
+    {
+      "name": "disconnect-namespace",
+      "encoded": [
+        {
+          "text": "1/admin,"
+        }
+      ],
+      "decoded": {
+        "type": "disconnect",
+        "nsp": "/admin",
+        "id": null,
+        "data": null,
+        "attachments": 0
+      }
+    },
+    {
+      "name": "connect-error",
+      "encoded": [
+        {
+          "text": "4{\"message\":\"Not authorized\"}"
+        }
+      ],
+      "decoded": {
+        "type": "connect_error",
+        "nsp": "/",
+        "id": null,
+        "data": {
+          "message": "Not authorized"
+        },
+        "attachments": 0
+      }
+    },
+    {
+      "name": "connect-error-namespace",
+      "encoded": [
+        {
+          "text": "4/admin,{\"message\":\"Invalid namespace\",\"data\":{\"code\":1}}"
+        }
+      ],
+      "decoded": {
+        "type": "connect_error",
+        "nsp": "/admin",
+        "id": null,
+        "data": {
+          "message": "Invalid namespace",
+          "data": {
+            "code": 1
+          }
+        },
+        "attachments": 0
+      }
+    },
+    {
+      "name": "binary-event",
+      "encoded": [
+        {
+          "text": "51-[\"file\",{\"_placeholder\":true,\"num\":0}]"
+        },
+        {
+          "binary_b64": "AQID"
+        }
+      ],
+      "decoded": {
+        "type": "event",
+        "nsp": "/",
+        "id": null,
+        "data": [
+          "file",
+          {
+            "_binary_b64": "AQID"
+          }
+        ],
+        "attachments": 1
+      }
+    },
+    {
+      "name": "binary-event-empty-buffer",
+      "encoded": [
+        {
+          "text": "51-[\"zero\",{\"_placeholder\":true,\"num\":0}]"
+        },
+        {
+          "binary_b64": ""
+        }
+      ],
+      "decoded": {
+        "type": "event",
+        "nsp": "/",
+        "id": null,
+        "data": [
+          "zero",
+          {
+            "_binary_b64": ""
+          }
+        ],
+        "attachments": 1
+      }
+    },
+    {
+      "name": "binary-event-nested",
+      "encoded": [
+        {
+          "text": "52-[\"files\",{\"meta\":{\"name\":\"a.bin\"},\"chunks\":[{\"_placeholder\":true,\"num\":0},{\"inner\":{\"_placeholder\":true,\"num\":1}}]}]"
+        },
+        {
+          "binary_b64": "AP8="
+        },
+        {
+          "binary_b64": "ChQe"
+        }
+      ],
+      "decoded": {
+        "type": "event",
+        "nsp": "/",
+        "id": null,
+        "data": [
+          "files",
+          {
+            "meta": {
+              "name": "a.bin"
+            },
+            "chunks": [
+              {
+                "_binary_b64": "AP8="
+              },
+              {
+                "inner": {
+                  "_binary_b64": "ChQe"
+                }
+              }
+            ]
+          }
+        ],
+        "attachments": 2
+      }
+    },
+    {
+      "name": "binary-event-multiple",
+      "encoded": [
+        {
+          "text": "53-[\"multi\",{\"_placeholder\":true,\"num\":0},{\"_placeholder\":true,\"num\":1},{\"_placeholder\":true,\"num\":2}]"
+        },
+        {
+          "binary_b64": "AQ=="
+        },
+        {
+          "binary_b64": "AgI="
+        },
+        {
+          "binary_b64": "AwMD"
+        }
+      ],
+      "decoded": {
+        "type": "event",
+        "nsp": "/",
+        "id": null,
+        "data": [
+          "multi",
+          {
+            "_binary_b64": "AQ=="
+          },
+          {
+            "_binary_b64": "AgI="
+          },
+          {
+            "_binary_b64": "AwMD"
+          }
+        ],
+        "attachments": 3
+      }
+    },
+    {
+      "name": "binary-event-with-ack-id",
+      "encoded": [
+        {
+          "text": "51-7[\"upload\",{\"bytes\":{\"_placeholder\":true,\"num\":0}}]"
+        },
+        {
+          "binary_b64": "CQgH"
+        }
+      ],
+      "decoded": {
+        "type": "event",
+        "nsp": "/",
+        "id": 7,
+        "data": [
+          "upload",
+          {
+            "bytes": {
+              "_binary_b64": "CQgH"
+            }
+          }
+        ],
+        "attachments": 1
+      }
+    },
+    {
+      "name": "binary-event-namespace",
+      "encoded": [
+        {
+          "text": "51-/admin,[\"bin\",{\"_placeholder\":true,\"num\":0}]"
+        },
+        {
+          "binary_b64": "BAU="
+        }
+      ],
+      "decoded": {
+        "type": "event",
+        "nsp": "/admin",
+        "id": null,
+        "data": [
+          "bin",
+          {
+            "_binary_b64": "BAU="
+          }
+        ],
+        "attachments": 1
+      }
+    },
+    {
+      "name": "binary-event-namespace-ack-id",
+      "encoded": [
+        {
+          "text": "51-/admin,9[\"bin\",{\"_placeholder\":true,\"num\":0}]"
+        },
+        {
+          "binary_b64": "Bg=="
+        }
+      ],
+      "decoded": {
+        "type": "event",
+        "nsp": "/admin",
+        "id": 9,
+        "data": [
+          "bin",
+          {
+            "_binary_b64": "Bg=="
+          }
+        ],
+        "attachments": 1
+      }
+    },
+    {
+      "name": "binary-ack",
+      "encoded": [
+        {
+          "text": "61-7[{\"_placeholder\":true,\"num\":0}]"
+        },
+        {
+          "binary_b64": "AQECAwUI"
+        }
+      ],
+      "decoded": {
+        "type": "ack",
+        "nsp": "/",
+        "id": 7,
+        "data": [
+          {
+            "_binary_b64": "AQECAwUI"
+          }
+        ],
+        "attachments": 1
+      }
+    },
+    {
+      "name": "binary-ack-namespace",
+      "encoded": [
+        {
+          "text": "61-/admin,4[{\"b\":{\"_placeholder\":true,\"num\":0}}]"
+        },
+        {
+          "binary_b64": "DQ=="
+        }
+      ],
+      "decoded": {
+        "type": "ack",
+        "nsp": "/admin",
+        "id": 4,
+        "data": [
+          {
+            "b": {
+              "_binary_b64": "DQ=="
+            }
+          }
+        ],
+        "attachments": 1
+      }
+    }
+  ],
+  "socketio_edge_cases": [
+    {
+      "name": "invalid-unknown-type",
+      "text": "9",
+      "error": true,
+      "message": "unknown packet type 9",
+      "decoded": null,
+      "waiting_for_attachments": false
+    },
+    {
+      "name": "invalid-event-without-payload",
+      "text": "2",
+      "error": false,
+      "message": null,
+      "decoded": {
+        "type": "event",
+        "nsp": "/",
+        "id": null,
+        "data": null,
+        "attachments": 0
+      },
+      "waiting_for_attachments": false
+    },
+    {
+      "name": "invalid-event-bad-json",
+      "text": "2[",
+      "error": true,
+      "message": "invalid payload",
+      "decoded": null,
+      "waiting_for_attachments": false
+    },
+    {
+      "name": "invalid-event-object-payload",
+      "text": "2{\"a\":1}",
+      "error": true,
+      "message": "invalid payload",
+      "decoded": null,
+      "waiting_for_attachments": false
+    },
+    {
+      "name": "invalid-event-number-payload",
+      "text": "242",
+      "error": false,
+      "message": null,
+      "decoded": {
+        "type": "event",
+        "nsp": "/",
+        "id": 42,
+        "data": null,
+        "attachments": 0
+      },
+      "waiting_for_attachments": false
+    },
+    {
+      "name": "invalid-event-empty-array",
+      "text": "2[]",
+      "error": true,
+      "message": "invalid payload",
+      "decoded": null,
+      "waiting_for_attachments": false
+    },
+    {
+      "name": "invalid-event-name-not-string",
+      "text": "2[1,2]",
+      "error": false,
+      "message": null,
+      "decoded": {
+        "type": "event",
+        "nsp": "/",
+        "id": null,
+        "data": [
+          1,
+          2
+        ],
+        "attachments": 0
+      },
+      "waiting_for_attachments": false
+    },
+    {
+      "name": "invalid-connect-array-payload",
+      "text": "0[]",
+      "error": true,
+      "message": "invalid payload",
+      "decoded": null,
+      "waiting_for_attachments": false
+    },
+    {
+      "name": "invalid-ack-object-payload",
+      "text": "3{\"a\":1}",
+      "error": true,
+      "message": "invalid payload",
+      "decoded": null,
+      "waiting_for_attachments": false
+    },
+    {
+      "name": "invalid-connect-error-string-payload",
+      "text": "4\"x\"",
+      "error": false,
+      "message": null,
+      "decoded": {
+        "type": "connect_error",
+        "nsp": "/",
+        "id": null,
+        "data": "x",
+        "attachments": 0
+      },
+      "waiting_for_attachments": false
+    },
+    {
+      "name": "invalid-binary-attachments-not-number",
+      "text": "5x-[\"a\"]",
+      "error": true,
+      "message": "Illegal attachments",
+      "decoded": null,
+      "waiting_for_attachments": false
+    },
+    {
+      "name": "invalid-reserved-event-name",
+      "text": "2[\"connect\"]",
+      "error": true,
+      "message": "invalid payload",
+      "decoded": null,
+      "waiting_for_attachments": false
+    },
+    {
+      "name": "edge-event-numeric-name",
+      "text": "2[1,\"x\"]",
+      "error": false,
+      "message": null,
+      "decoded": {
+        "type": "event",
+        "nsp": "/",
+        "id": null,
+        "data": [
+          1,
+          "x"
+        ],
+        "attachments": 0
+      },
+      "waiting_for_attachments": false
+    },
+    {
+      "name": "edge-ack-id-without-data",
+      "text": "312",
+      "error": false,
+      "message": null,
+      "decoded": {
+        "type": "ack",
+        "nsp": "/",
+        "id": 12,
+        "data": null,
+        "attachments": 0
+      },
+      "waiting_for_attachments": false
+    },
+    {
+      "name": "edge-namespace-without-comma",
+      "text": "2/admin",
+      "error": false,
+      "message": null,
+      "decoded": {
+        "type": "event",
+        "nsp": "/admin",
+        "id": null,
+        "data": null,
+        "attachments": 0
+      },
+      "waiting_for_attachments": false
+    },
+    {
+      "name": "edge-whitespace-payload",
+      "text": "2 [\"a\"]",
+      "error": false,
+      "message": null,
+      "decoded": {
+        "type": "event",
+        "nsp": "/",
+        "id": 0,
+        "data": [
+          "a"
+        ],
+        "attachments": 0
+      },
+      "waiting_for_attachments": false
+    },
+    {
+      "name": "edge-binary-header-waiting",
+      "text": "51-[\"file\",{\"_placeholder\":true,\"num\":0}]",
+      "error": false,
+      "message": null,
+      "decoded": null,
+      "waiting_for_attachments": true
+    },
+    {
+      "name": "edge-connect-error-string",
+      "text": "4\"oops\"",
+      "error": false,
+      "message": null,
+      "decoded": {
+        "type": "connect_error",
+        "nsp": "/",
+        "id": null,
+        "data": "oops",
+        "attachments": 0
+      },
+      "waiting_for_attachments": false
+    },
+    {
+      "name": "edge-disconnect-with-payload",
+      "text": "1{}",
+      "error": true,
+      "message": "invalid payload",
+      "decoded": null,
+      "waiting_for_attachments": false
+    }
+  ],
+  "engineio_packets": [
+    {
+      "name": "open",
+      "supports_binary": false,
+      "encoded_text": "0{\"sid\":\"lv_VI97HAXpY6yYWAAAC\",\"upgrades\":[\"websocket\"],\"pingInterval\":25000,\"pingTimeout\":20000,\"maxPayload\":1000000}",
+      "encoded_binary_b64": null,
+      "decoded": {
+        "type": "open",
+        "data": "{\"sid\":\"lv_VI97HAXpY6yYWAAAC\",\"upgrades\":[\"websocket\"],\"pingInterval\":25000,\"pingTimeout\":20000,\"maxPayload\":1000000}",
+        "binary": false
+      }
+    },
+    {
+      "name": "close",
+      "supports_binary": false,
+      "encoded_text": "1",
+      "encoded_binary_b64": null,
+      "decoded": {
+        "type": "close",
+        "data": null,
+        "binary": false
+      }
+    },
+    {
+      "name": "ping",
+      "supports_binary": false,
+      "encoded_text": "2",
+      "encoded_binary_b64": null,
+      "decoded": {
+        "type": "ping",
+        "data": null,
+        "binary": false
+      }
+    },
+    {
+      "name": "pong",
+      "supports_binary": false,
+      "encoded_text": "3",
+      "encoded_binary_b64": null,
+      "decoded": {
+        "type": "pong",
+        "data": null,
+        "binary": false
+      }
+    },
+    {
+      "name": "ping-probe",
+      "supports_binary": false,
+      "encoded_text": "2probe",
+      "encoded_binary_b64": null,
+      "decoded": {
+        "type": "ping",
+        "data": "probe",
+        "binary": false
+      }
+    },
+    {
+      "name": "pong-probe",
+      "supports_binary": false,
+      "encoded_text": "3probe",
+      "encoded_binary_b64": null,
+      "decoded": {
+        "type": "pong",
+        "data": "probe",
+        "binary": false
+      }
+    },
+    {
+      "name": "message-text",
+      "supports_binary": false,
+      "encoded_text": "4hello",
+      "encoded_binary_b64": null,
+      "decoded": {
+        "type": "message",
+        "data": "hello",
+        "binary": false
+      }
+    },
+    {
+      "name": "message-socketio-event",
+      "supports_binary": false,
+      "encoded_text": "42[\"ev\",1]",
+      "encoded_binary_b64": null,
+      "decoded": {
+        "type": "message",
+        "data": "2[\"ev\",1]",
+        "binary": false
+      }
+    },
+    {
+      "name": "message-japanese",
+      "supports_binary": false,
+      "encoded_text": "42[\"メッセージ\",\"テスト🎴\"]",
+      "encoded_binary_b64": null,
+      "decoded": {
+        "type": "message",
+        "data": "2[\"メッセージ\",\"テスト🎴\"]",
+        "binary": false
+      }
+    },
+    {
+      "name": "message-empty",
+      "supports_binary": false,
+      "encoded_text": "4",
+      "encoded_binary_b64": null,
+      "decoded": {
+        "type": "message",
+        "data": null,
+        "binary": false
+      }
+    },
+    {
+      "name": "upgrade",
+      "supports_binary": false,
+      "encoded_text": "5",
+      "encoded_binary_b64": null,
+      "decoded": {
+        "type": "upgrade",
+        "data": null,
+        "binary": false
+      }
+    },
+    {
+      "name": "noop",
+      "supports_binary": false,
+      "encoded_text": "6",
+      "encoded_binary_b64": null,
+      "decoded": {
+        "type": "noop",
+        "data": null,
+        "binary": false
+      }
+    },
+    {
+      "name": "message-binary-websocket",
+      "supports_binary": true,
+      "encoded_text": null,
+      "encoded_binary_b64": "AQIDBA==",
+      "decoded": {
+        "type": "message",
+        "data": {
+          "_binary_b64": "AQIDBA=="
+        },
+        "binary": true
+      }
+    },
+    {
+      "name": "message-binary-polling",
+      "supports_binary": false,
+      "encoded_text": "bAQIDBA==",
+      "encoded_binary_b64": null,
+      "decoded": {
+        "type": "message",
+        "data": {
+          "_binary_b64": "AQIDBA=="
+        },
+        "binary": true
+      }
+    },
+    {
+      "name": "message-binary-empty-polling",
+      "supports_binary": false,
+      "encoded_text": "b",
+      "encoded_binary_b64": null,
+      "decoded": {
+        "type": "message",
+        "data": {
+          "_binary_b64": ""
+        },
+        "binary": true
+      }
+    }
+  ],
+  "polling_payloads": [
+    {
+      "name": "single-message",
+      "payload": "4hello",
+      "decoded": [
+        {
+          "type": "message",
+          "data": "hello",
+          "binary": false
+        }
+      ]
+    },
+    {
+      "name": "message-and-ping",
+      "payload": "4hello\u001e2",
+      "decoded": [
+        {
+          "type": "message",
+          "data": "hello",
+          "binary": false
+        },
+        {
+          "type": "ping",
+          "data": null,
+          "binary": false
+        }
+      ]
+    },
+    {
+      "name": "open-only",
+      "payload": "0{\"sid\":\"lv_VI97HAXpY6yYWAAAC\",\"upgrades\":[\"websocket\"],\"pingInterval\":25000,\"pingTimeout\":20000,\"maxPayload\":1000000}",
+      "decoded": [
+        {
+          "type": "open",
+          "data": "{\"sid\":\"lv_VI97HAXpY6yYWAAAC\",\"upgrades\":[\"websocket\"],\"pingInterval\":25000,\"pingTimeout\":20000,\"maxPayload\":1000000}",
+          "binary": false
+        }
+      ]
+    },
+    {
+      "name": "open-and-connect",
+      "payload": "0{\"sid\":\"lv_VI97HAXpY6yYWAAAC\",\"upgrades\":[\"websocket\"],\"pingInterval\":25000,\"pingTimeout\":20000,\"maxPayload\":1000000}\u001e40{\"sid\":\"abc\"}",
+      "decoded": [
+        {
+          "type": "open",
+          "data": "{\"sid\":\"lv_VI97HAXpY6yYWAAAC\",\"upgrades\":[\"websocket\"],\"pingInterval\":25000,\"pingTimeout\":20000,\"maxPayload\":1000000}",
+          "binary": false
+        },
+        {
+          "type": "message",
+          "data": "0{\"sid\":\"abc\"}",
+          "binary": false
+        }
+      ]
+    },
+    {
+      "name": "binary-and-text",
+      "payload": "bBwcH\u001e4text",
+      "decoded": [
+        {
+          "type": "message",
+          "data": {
+            "_binary_b64": "BwcH"
+          },
+          "binary": true
+        },
+        {
+          "type": "message",
+          "data": "text",
+          "binary": false
+        }
+      ]
+    },
+    {
+      "name": "socketio-binary-event-in-polling",
+      "payload": "451-[\"file\",{\"_placeholder\":true,\"num\":0}]\u001ebAQID",
+      "decoded": [
+        {
+          "type": "message",
+          "data": "51-[\"file\",{\"_placeholder\":true,\"num\":0}]",
+          "binary": false
+        },
+        {
+          "type": "message",
+          "data": {
+            "_binary_b64": "AQID"
+          },
+          "binary": true
+        }
+      ]
+    },
+    {
+      "name": "noop",
+      "payload": "6",
+      "decoded": [
+        {
+          "type": "noop",
+          "data": null,
+          "binary": false
+        }
+      ]
+    },
+    {
+      "name": "close",
+      "payload": "1",
+      "decoded": [
+        {
+          "type": "close",
+          "data": null,
+          "binary": false
+        }
+      ]
+    },
+    {
+      "name": "many-events",
+      "payload": "42[\"a\",1]\u001e42[\"b\",{\"x\":\"y\"}]\u001e430[{\"ok\":true}]\u001e42[\"日本語\",\"テスト\"]",
+      "decoded": [
+        {
+          "type": "message",
+          "data": "2[\"a\",1]",
+          "binary": false
+        },
+        {
+          "type": "message",
+          "data": "2[\"b\",{\"x\":\"y\"}]",
+          "binary": false
+        },
+        {
+          "type": "message",
+          "data": "30[{\"ok\":true}]",
+          "binary": false
+        },
+        {
+          "type": "message",
+          "data": "2[\"日本語\",\"テスト\"]",
+          "binary": false
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,6 @@
+version: 1
+goals: [hidden_info, seat_hijack, rule_break, server_down, xss, sqli, game_stall]
+not_applicable: [pii_theft, server_intrusion]
+flags:
+  state_keys: [player.reconnect_token]
+markers: { xss: true, sqli: true }

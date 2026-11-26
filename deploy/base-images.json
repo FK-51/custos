@@ -1,0 +1,7 @@
+{
+  "_comment": "コンテナの土台のイメージ（指示書 制約10：ダイジェストで固定する）。変えるときは人間の承認を受ける。",
+  "runtime_deps": "mcr.microsoft.com/dotnet/runtime-deps@sha256:e6702e45635272155c2aa35568bcbdb975595c0afa73e2656a973d0a87703282",
+  "playwright": "mcr.microsoft.com/playwright@sha256:1507cbfc550a63a6b7396791ca4f00df17beb56342d2447b3f106c306f525579",
+  "node": "node@sha256:2cf067cfed83d5ea958367df9f966191a942351a2df77d6f0193e162b5febfc0",
+  "python": "python@sha256:191083cdf6c7bda8c76158983163ead5d5cf7b77cf3033e805bb0f5296f51b4b"
+}

@@ -1,0 +1,170 @@
+# TODO: アプリに合わせて書き換える（ひな形。元は halpal の検証用リポジトリ）
+# 不変条件（設計書 第18.4節、第26.3節）。Web の不変条件は「違反している行を返す SQL」。1行も返らなければ合格。
+# sql：アプリの DB（読み取り専用）。sent_sql：送信された状態（表 sent / recv / acks / http、payload は最初の引数の JSON）。
+# cross_sql：その両方（写しの突き合わせ。第25.3節）。
+version: 1
+invariants:
+  # --- 対局の進行（高）---
+  - id: log_sequence_contiguous
+    severity: high
+    stage: 1
+    category: progress
+    description: 手のログの通し番号に抜けや重複がない（0 から連続）
+    sql: >
+      SELECT gameSessionId FROM GameLogAction GROUP BY gameSessionId
+      HAVING COUNT(*) <> MAX(sequenceNumber) + 1 OR MIN(sequenceNumber) <> 0
+  - id: no_actions_after_game_end
+    severity: high
+    stage: 1
+    category: progress
+    description: 終局の後に手が記録されない
+    sql: >
+      SELECT a.id FROM GameLogAction a JOIN GameLogAction e
+        ON e.gameSessionId = a.gameSessionId AND e.actionType = 'game_end'
+      WHERE a.sequenceNumber > e.sequenceNumber
+  - id: single_game_end
+    severity: high
+    stage: 1
+    category: endgame
+    description: 終局は1回だけ
+    sql: >
+      SELECT gameSessionId FROM GameLogAction WHERE actionType = 'game_end'
+      GROUP BY gameSessionId HAVING COUNT(*) > 1
+  - id: ended_session_has_result
+    severity: high
+    stage: 1
+    category: endgame
+    description: 終わった対局には結果（勝者・敗者）が記録されている
+    sql: >
+      SELECT id FROM GameSession WHERE endedAt IS NOT NULL AND (result IS NULL OR winnersJson IS NULL OR losersJson IS NULL)
+  - id: outcome_matches_winners
+    severity: medium
+    stage: 1
+    category: endgame
+    description: 対局者ごとの勝敗（outcome）が、勝者の一覧と合う
+    sql: >
+      SELECT s.id FROM GameSession s JOIN GameSessionPlayer p ON p.gameSessionId = s.id
+      WHERE s.endedAt IS NOT NULL AND s.winnersJson IS NOT NULL
+      GROUP BY s.id
+      HAVING SUM(CASE WHEN p.outcome = 'win' THEN 1 ELSE 0 END) <> json_array_length(s.winnersJson)
+  # --- 札の保存則（高）。手のログの状態の写し（10手ごとと終局）を調べる ---
+  - id: card_conservation
+    severity: high
+    stage: 1
+    category: conservation
+    description: 札の総数（山札 + 転生札 + 手札 + 場）が 18 枚から変わらない
+    sql: >
+      SELECT a.id FROM GameLogAction a WHERE a.stateSnapshotJson IS NOT NULL AND (
+        json_array_length(json_extract(a.stateSnapshotJson, '$.deck'))
+        + json_array_length(json_extract(a.stateSnapshotJson, '$.reincarnation'))
+        + (SELECT COALESCE(SUM(json_array_length(json_extract(p.value, '$.hands'))), 0) FROM json_each(json_extract(a.stateSnapshotJson, '$.players')) p)
+        + (SELECT COALESCE(SUM(json_array_length(pl.value)), 0) FROM json_each(json_extract(a.stateSnapshotJson, '$.played')) pl)
+      ) <> 18
+  - id: card_single_location
+    severity: high
+    stage: 1
+    category: conservation
+    description: 1枚の札が二か所にない（札の番号 instanceId が状態の中で一意）
+    sql: >
+      WITH cards AS (
+        SELECT a.id AS action, json_extract(d.value, '$.instanceId') AS iid FROM GameLogAction a, json_each(json_extract(a.stateSnapshotJson, '$.deck')) d WHERE a.stateSnapshotJson IS NOT NULL
+        UNION ALL SELECT a.id, json_extract(r.value, '$.instanceId') FROM GameLogAction a, json_each(json_extract(a.stateSnapshotJson, '$.reincarnation')) r WHERE a.stateSnapshotJson IS NOT NULL
+        UNION ALL SELECT a.id, json_extract(h.value, '$.instanceId') FROM GameLogAction a, json_each(json_extract(a.stateSnapshotJson, '$.players')) p, json_each(json_extract(p.value, '$.hands')) h WHERE a.stateSnapshotJson IS NOT NULL
+        UNION ALL SELECT a.id, json_extract(c.value, '$.instanceId') FROM GameLogAction a, json_each(json_extract(a.stateSnapshotJson, '$.played')) pl, json_each(pl.value) c WHERE a.stateSnapshotJson IS NOT NULL
+      )
+      SELECT action, iid FROM cards GROUP BY action, iid HAVING COUNT(*) > 1
+  # --- 資源（高）---
+  - id: hand_size_bounded
+    severity: high
+    stage: 1
+    category: resource
+    description: 生存しているプレイヤーの手札は2枚以下
+    sql: >
+      SELECT a.id FROM GameLogAction a, json_each(json_extract(a.stateSnapshotJson, '$.players')) p
+      WHERE a.stateSnapshotJson IS NOT NULL AND json_extract(p.value, '$.live') = 1
+        AND json_array_length(json_extract(p.value, '$.hands')) > 2
+  # --- 部屋（中）---
+  - id: room_capacity
+    severity: medium
+    stage: 1
+    category: room
+    description: 部屋の定員を超えない
+    sql: >
+      SELECT r.id FROM Room r JOIN RoomPlayer rp ON rp.roomId = r.id GROUP BY r.id HAVING COUNT(*) > r.maxPlayers
+  # --- 利用者（致命的）---
+  - id: registered_player_has_token
+    severity: critical
+    stage: 1
+    category: user
+    description: 登録した利用者には、再接続の本人確認の値（再接続トークン）がある
+    sql: >
+      SELECT id FROM Player WHERE reconnectToken IS NULL OR length(reconnectToken) <> 64
+  # --- 送信された状態（写しの一致）---
+  - id: view_card_conservation
+    severity: high
+    stage: 1
+    category: replica
+    description: 各利用者に送られた状態で、札の総数（手札 + 場 + 山札 + 相手の手札の枚数 + 転生札）が 18 枚
+    sent_sql: >
+      SELECT seq FROM sent WHERE json_extract(payload, '$.now.cardNumber') IS NOT NULL AND (
+        json_array_length(json_extract(payload, '$.now.myHands'))
+        + json_array_length(json_extract(payload, '$.now.myPlayed'))
+        + (SELECT COALESCE(SUM(json_array_length(o.value)), 0) FROM json_each(json_extract(payload, '$.now.otherPlayed')) o)
+        + json_extract(payload, '$.now.cardNumber')
+        + (SELECT COALESCE(SUM(json_extract(h.value, '$.length')), 0) FROM json_each(json_extract(payload, '$.now.playersHandsLengths')) h
+             WHERE json_extract(h.value, '$.turnNumber') <> json_extract(payload, '$.now.myTurnNumber'))
+        + CASE WHEN json_extract(payload, '$.now.reincarnation') THEN 1 ELSE 0 END
+      ) <> 18
+  - id: view_own_hand_count
+    severity: high
+    stage: 1
+    category: replica
+    description: 送られた状態の中で、自分の手札の枚数（playersHandsLengths）と手札の中身（myHands）が合う
+    sent_sql: >
+      SELECT s.seq FROM sent s, json_each(json_extract(s.payload, '$.now.playersHandsLengths')) h
+      WHERE json_extract(h.value, '$.turnNumber') = json_extract(s.payload, '$.now.myTurnNumber')
+        AND json_extract(h.value, '$.length') <> json_array_length(json_extract(s.payload, '$.now.myHands'))
+  - id: offered_choices_not_empty
+    severity: high
+    stage: 1
+    category: progress
+    description: 選択を求めるときは、選択肢が1つ以上ある（ないなら詰み。第25.4節）
+    sent_sql: >
+      SELECT seq FROM sent WHERE event = 'yourTurn' AND json_array_length(json_extract(payload, '$.choices')) = 0
+  - id: play_card_choices_in_hand
+    severity: high
+    stage: 1
+    category: rules
+    description: 出す札の選択肢は、自分の手札の中にある
+    sent_sql: >
+      SELECT s.seq FROM sent s, json_each(json_extract(s.payload, '$.choices')) c
+      WHERE s.event = 'yourTurn' AND json_extract(s.payload, '$.kind') = 'play_card'
+        AND NOT EXISTS (SELECT 1 FROM json_each(json_extract(s.payload, '$.now.myHands')) h WHERE h.value = c.value)
+  - id: card_ten_not_playable
+    severity: high
+    stage: 1
+    category: rules
+    description: 彼女（10）は場に出せない（出す札の選択肢に入らない）
+    sent_sql: >
+      SELECT s.seq FROM sent s, json_each(json_extract(s.payload, '$.choices')) c
+      WHERE s.event = 'yourTurn' AND json_extract(s.payload, '$.kind') = 'play_card' AND c.value = 10
+  - id: deck_count_non_negative
+    severity: high
+    stage: 1
+    category: resource
+    description: 山札の残り枚数が負にならない
+    sent_sql: >
+      SELECT seq FROM sent WHERE json_extract(payload, '$.now.cardNumber') < 0
+  - id: final_deck_matches_log
+    severity: high
+    stage: 2
+    category: replica
+    description: 終局の時点の山札の枚数が、手のログ（終局の状態の写し）と、最後に送られた状態で合う（候補）
+    cross_sql: >
+      SELECT g.id FROM GameSession g
+        JOIN GameLogAction a ON a.gameSessionId = g.id AND a.actionType = 'game_end'
+      WHERE json_array_length(json_extract(a.stateSnapshotJson, '$.deck')) <> (
+        SELECT json_extract(s.payload, '$.now.cardNumber') FROM sent s
+        WHERE json_extract(s.payload, '$.now.roomId') = g.roomId AND json_extract(s.payload, '$.now.cardNumber') IS NOT NULL
+          AND s.ts <= strftime('%Y-%m-%dT%H:%M:%f', a.createdAt / 1000.0, 'unixepoch') || '9Z'
+        ORDER BY s.seq DESC LIMIT 1)

@@ -1,0 +1,20 @@
+# TODO: アプリに合わせて書き換える（ひな形。元は halpal の検証用リポジトリ）
+# 画面から利用者名を登録し、部屋を作ると、状態の読み取り結果と一致する（C-1、指示書 タスク8）
+version: 1
+name: ui-create
+steps:
+  - browser_open: { page: main }
+  - browser_wait: { page: main, selector: "#name", timeout_ms: 20000 }
+  - browser_screenshot: { page: main, name: c1-lobby }
+  - browser_fill: { page: main, selector: "#name", value: "ui-{run}" }
+  - browser_click: { page: main, selector: ".create-btn" }
+  - browser_wait: { page: main, selector: "#room-id-display", timeout_ms: 20000 }
+  - browser_read: { page: main, selector: "#room-id-display", read: text, save: shown_room }
+  - browser_screenshot: { page: main, name: c1-waiting }
+  - settle: { quiet_ms: 500 }
+  # 画面に出た部屋のIDが DB にあり、その部屋のオーナーが画面で登録した名前の利用者であること
+  - query: { sql: "SELECT r.id, p.name FROM Room r JOIN Player p ON p.id = r.ownerId WHERE p.name = 'ui-{run}'", rows: 1, save: { owned_room: "$[0][0]", owner_name: "$[0][1]" } }
+  - assert: { equals: ["{owned_room}", "{shown_room}"] }
+  - assert: { equals: ["{owner_name}", "ui-{run}"] }
+  - expect: { state: room.member_count, entity: "{shown_room}", equals: 1 }
+  - expect: { state: ui.room_id_display, exists: true }

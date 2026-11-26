@@ -1,0 +1,14 @@
+# 相手役のボットの約束事（設計書 第25.9節）。サーバーが提示した選択肢（yourTurn の choices）から選ぶ。
+version: 1
+choice_event: yourTurn
+choices_path: "$.choices"
+kind_path: "$.kind"
+object_choice_field: selectNumber        # opponentChoice の選択肢は {selectNumber, player}
+reply_event: playerChoice
+reply_template: { roomId: "{room}", choice: "{choice}" }
+acks:
+  - on: cardEffectResult                 # 画面がアニメーションを終えたときに送る確認（送らないと10秒待たされる）
+    reply_event: cardEffectAck
+    reply_template: { roomId: "{room}" }
+end_events: [redirectToResult]
+room_key: room

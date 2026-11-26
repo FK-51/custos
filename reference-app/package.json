@@ -1,0 +1,10 @@
+{
+  "name": "custos-reference-app",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Custos の参照アプリ（設計書 第12.5節）：既知のバグを埋め込んだ小さなターン制カードゲーム。フレームワーク自体の回帰テストに使う。本番では使わない。",
+  "license": "UNLICENSED",
+  "main": "server.js",
+  "scripts": { "start": "node server.js" },
+  "dependencies": { "socket.io": "4.8.1" }
+}

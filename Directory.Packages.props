@@ -1,0 +1,22 @@
+<Project>
+  <!-- 依存の版はここで固定する（指示書 制約10）。変更は人間の承認を受ける。 -->
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+    <CentralPackageTransitivePinningEnabled>false</CentralPackageTransitivePinningEnabled>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- 設定ファイル -->
+    <PackageVersion Include="YamlDotNet" Version="18.1.0" />
+    <!-- SQLite の読み取り（読み取り専用で開く） -->
+    <PackageVersion Include="Microsoft.Data.Sqlite" Version="10.0.15" />
+    <!-- Socket.IO のスクリプトクライアント（コミュニティ製。互換性は適合テスト C-4 で毎回確かめる） -->
+    <PackageVersion Include="SocketIOClient" Version="4.0.5" />
+    <!-- ブラウザ自動化 -->
+    <PackageVersion Include="Microsoft.Playwright" Version="1.65.1" />
+    <!-- 自前アナライザー -->
+    <PackageVersion Include="Microsoft.CodeAnalysis.CSharp" Version="4.8.0" />
+    <PackageVersion Include="Microsoft.CodeAnalysis.Analyzers" Version="3.3.4" />
+    <!-- テスト -->
+    <PackageVersion Include="xunit.v3" Version="4.0.3" />
+  </ItemGroup>
+</Project>

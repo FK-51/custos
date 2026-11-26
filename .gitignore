@@ -1,0 +1,51 @@
+# Claude Code の作業用（CLAUDE.md、作業ログ、参照資料）
+.claude/
+
+# .NET のビルド出力
+bin/
+obj/
+artifacts/
+*.binlog
+
+# テストの結果（Microsoft.Testing.Platform の既定の出力先）
+TestResults/
+
+# IDE・エディタ
+*.user
+*.suo
+.vs/
+.idea/
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+!.vscode/launch.json
+!.vscode/tasks.json
+*.swp
+*~
+
+# macOS
+.DS_Store
+
+# Node.js（adapters/node-testapi、reference-app、tests/oracle-node）
+node_modules/
+npm-debug.log*
+
+# Python（analyzers/image）
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# 書き込みの途中で止まったときに残る一時ファイル（*.tmp に書いてから名前を変えるため）
+*.tmp
+
+# 秘密の値はリポジトリに入れない（指示書 制約8）
+*.key
+*.pem
+*.pfx
+*.p12
+id_*
+!*.pub
+.env
+.env.*
+!.env.example

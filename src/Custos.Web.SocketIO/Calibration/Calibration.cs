@@ -1,0 +1,418 @@
+using System.Globalization;
+using System.Text.Json.Nodes;
+using Custos.Core.Config;
+using Custos.Core.Conformance;
+using Custos.Core.Judging;
+using Custos.Core.Results;
+using Custos.Core.Scenarios;
+using Custos.Core.Util;
+using Custos.Statistics;
+using Custos.Web.SocketIO.Judges;
+using Custos.Web.SocketIO.Lab;
+using Custos.Web.SocketIO.Scenarios;
+using Custos.Web.SocketIO.State;
+
+namespace Custos.Web.SocketIO.Calibration;
+
+/// <summary>
+/// 校正用バグ1件（設計書 第19章）。検証用リポジトリの seeds/&lt;ID&gt;/ に、目印のないパッチ（patch.diff）、
+/// 確認用シナリオ（confirm.yaml。探索役には見せない）、対応表（meta.yaml：種類、説明、クラッシュ系か）を置く。
+/// </summary>
+public sealed record SeedDefinition(string Id, string Kind, string Description, string PatchPath, string ConfirmPath, bool Crash, string? Origin);
+
+/// <summary>品質チェックの結果（第19.5節）と層（第19.11節）。</summary>
+public sealed record SeedCheckResult(string Id, bool Applies, bool Effective, bool Trivial, string Reach, string Visibility, string Detail)
+{
+    /// <summary>層（到達の難しさ × 目立ち度）。</summary>
+    public string Layer => $"{Reach}{Visibility}";
+
+    /// <summary>使えるか（効いていて、自明すぎない）。</summary>
+    public bool Usable => Applies && Effective && !Trivial;
+}
+
+/// <summary>校正用バグの置き場所と使用済みの記録（第19.8節）。</summary>
+public static class SeedStore
+{
+    /// <summary>読む。</summary>
+    public static IReadOnlyList<SeedDefinition> Load(Workspace workspace)
+    {
+        ArgumentNullException.ThrowIfNull(workspace);
+        var root = Path.Combine(workspace.VerifyRepo, "seeds");
+        var list = new List<SeedDefinition>();
+        if (!Directory.Exists(root))
+        {
+            return list;
+        }
+
+        foreach (var dir in Directory.GetDirectories(root).Order(StringComparer.Ordinal))
+        {
+            var meta = Path.Combine(dir, "meta.yaml");
+            if (!File.Exists(meta))
+            {
+                continue;
+            }
+
+            var errors = new ConfigErrors();
+            var node = YamlDocument.Parse(File.ReadAllText(meta), Path.GetFileName(dir) + "/meta.yaml", errors);
+            var json = node == null ? null : Scenario.ToJson(node) as JsonObject;
+            if (json == null || errors.Any)
+            {
+                throw new CustosException($"{dir}/meta.yaml を読めません：{string.Join("; ", errors.Items)}");
+            }
+
+            list.Add(new SeedDefinition(
+                Path.GetFileName(dir),
+                json["kind"]?.ToString() ?? "unknown",
+                json["description"]?.ToString() ?? string.Empty,
+                Path.Combine(dir, "patch.diff"),
+                Path.Combine(dir, json["confirm"]?.ToString() ?? "confirm.yaml"),
+                json["crash"]?.GetValue<bool>() == true,
+                json["origin"]?.ToString()));
+        }
+
+        return list;
+    }
+
+    private static string UsedPath(Workspace workspace) => Path.Combine(workspace.DataDir, "calibration", "used.json");
+
+    /// <summary>使用済みの ID。</summary>
+    public static HashSet<string> Used(Workspace workspace)
+    {
+        var path = UsedPath(workspace);
+        return File.Exists(path) ? (JsonNode.Parse(File.ReadAllText(path)) as JsonArray ?? []).Select(n => n?.ToString() ?? string.Empty).ToHashSet(StringComparer.Ordinal) : new HashSet<string>(StringComparer.Ordinal);
+    }
+
+    /// <summary>使用済みにする（再利用しない）。</summary>
+    public static void MarkUsed(Workspace workspace, IEnumerable<string> ids)
+    {
+        var used = Used(workspace);
+        used.UnionWith(ids);
+        var path = UsedPath(workspace);
+        Directory.CreateDirectory(Path.GetDirectoryName(path) ?? workspace.DataDir);
+        File.WriteAllText(path, new JsonArray(used.Order(StringComparer.Ordinal).Select(u => (JsonNode?)JsonValue.Create(u)).ToArray()).ToJsonString());
+    }
+
+    /// <summary>パッチを当てた複製を作り、コミットする（イメージのタグが変わるように）。返り値は複製のディレクトリ。</summary>
+    public static async Task<string> PrepareCloneAsync(Workspace workspace, IReadOnlyList<SeedDefinition> seeds, string name, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(workspace);
+        ArgumentNullException.ThrowIfNull(seeds);
+        var dir = Path.Combine(workspace.DataDir, "calibration", "builds", name);
+        if (Directory.Exists(dir))
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+
+        Directory.CreateDirectory(Path.GetDirectoryName(dir) ?? workspace.DataDir);
+        (await ProcessRunner.RunAsync("git", ["clone", "--quiet", "--no-hardlinks", workspace.AppRepo, dir], timeout: TimeSpan.FromMinutes(5), cancellationToken: cancellationToken).ConfigureAwait(false)).EnsureSuccess("校正用の複製");
+        await ProcessRunner.RunAsync("git", ["-C", dir, "remote", "remove", "origin"], timeout: TimeSpan.FromSeconds(30), cancellationToken: cancellationToken).ConfigureAwait(false);
+        foreach (var seed in seeds)
+        {
+            (await ProcessRunner.RunAsync("git", ["-C", dir, "apply", "--index", seed.PatchPath], timeout: TimeSpan.FromMinutes(1), cancellationToken: cancellationToken).ConfigureAwait(false)).EnsureSuccess($"校正用バグ {seed.Id} のパッチ");
+        }
+
+        // コミットのメッセージにもバグの ID や目印を書かない（第19.4節）
+        (await ProcessRunner.RunAsync("git", ["-C", dir, "-c", "user.name=custos", "-c", "user.email=custos@localhost", "commit", "--quiet", "-m", "update"], timeout: TimeSpan.FromMinutes(1), cancellationToken: cancellationToken).ConfigureAwait(false)).EnsureSuccess("校正用の複製のコミット");
+        return dir;
+    }
+}
+
+/// <summary>
+/// 校正用バグの品質チェック（第19.5節）と層の自動割り当て（第19.11節）。
+/// 1. 効いているか：確認用シナリオを、パッチありとなしのビルドで同じシードで実行し、結果が変わる
+/// 2. 自明すぎないか：起動直後（何もしない）に汎用の判定器が反応しない
+/// 3. 層：目立ち度は、機械判定が反応する（V1）／手のログや送信された状態が変わる（V2）／見た目だけ（V3）。
+///    到達の難しさは、確認用シナリオの手順数で代用する（R1：3以内、R2：4〜10、R3：11以上）
+/// テスト用ビルド（シードの固定）で実行する。
+/// </summary>
+public sealed class SeedChecker
+{
+    private readonly Lab.Lab _lab;
+    private readonly Run _run;
+    private readonly Action<string> _log;
+
+    /// <summary>作る。</summary>
+    public SeedChecker(Lab.Lab lab, Run run, Action<string> log)
+    {
+        _lab = lab;
+        _run = run;
+        _log = log;
+    }
+
+    /// <summary>確かめる。</summary>
+    public async Task<IReadOnlyList<SeedCheckResult>> CheckAsync(IReadOnlyList<SeedDefinition> seeds, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(seeds);
+        var results = new List<SeedCheckResult>();
+
+        // パッチなし（基準）の結果を、確認用シナリオごとに取る
+        await _lab.UpAsync(new UpOptions("test", new HashSet<string>(StringComparer.Ordinal), null, false, false), cancellationToken).ConfigureAwait(false);
+        var baseline = new Dictionary<string, Outcome>(StringComparer.Ordinal);
+        foreach (var seed in seeds)
+        {
+            baseline[seed.Id] = await RunConfirmAsync(seed, "base", cancellationToken).ConfigureAwait(false);
+        }
+
+        foreach (var seed in seeds)
+        {
+            _log($"== 校正用バグ {seed.Id}（{seed.Kind}）");
+            string clone;
+            try
+            {
+                clone = await SeedStore.PrepareCloneAsync(_lab.Workspace, [seed], "check-" + seed.Id, cancellationToken).ConfigureAwait(false);
+            }
+            catch (CustosException e)
+            {
+                results.Add(new SeedCheckResult(seed.Id, false, false, false, "-", "-", "パッチが当たらない：" + e.Message));
+                continue;
+            }
+
+            await _lab.UpAsync(new UpOptions("test", new HashSet<string>(StringComparer.Ordinal), null, false, false, clone), cancellationToken).ConfigureAwait(false);
+
+            // 自明すぎないか：起動直後に何もしないで判定する
+            await _lab.ResetAsync("initial", false, cancellationToken).ConfigureAwait(false);
+            var idleBaseline = await JudgeContext.CaptureAsync(_lab, cancellationToken).ConfigureAwait(false);
+            await Task.Delay(2000, cancellationToken).ConfigureAwait(false);
+            var idle = await JudgeRunner.RunAsync(new JudgeContext(_lab, _run, idleBaseline), JudgeRunner.Stage1(), cancellationToken).ConfigureAwait(false);
+            var trivial = idle.SelectMany(r => r.Findings).Any(f => f.Stage == 1 && f.Category != "coverage");
+
+            var patched = await RunConfirmAsync(seed, "patched", cancellationToken).ConfigureAwait(false);
+            var basis = baseline[seed.Id];
+            var newFindings = patched.Findings.Except(basis.Findings, StringComparer.Ordinal).ToList();
+            var stateChanged = patched.StateHash != basis.StateHash || patched.ScenarioOk != basis.ScenarioOk;
+            var visibility = newFindings.Count > 0 ? "V1" : stateChanged ? "V2" : patched.ScreenHash != basis.ScreenHash ? "V3" : "-";
+            var effective = visibility != "-";
+            var reach = patched.Steps <= 3 ? "R1" : patched.Steps <= 10 ? "R2" : "R3";
+            var detail = $"確認用シナリオ：パッチあり {(patched.ScenarioOk ? "成功" : "失敗")}／なし {(basis.ScenarioOk ? "成功" : "失敗")}。新しい機械判定 {newFindings.Count} 件{(newFindings.Count > 0 ? "（" + newFindings[0] + "）" : string.Empty)}。状態 {(stateChanged ? "変化あり" : "同じ")}";
+            results.Add(new SeedCheckResult(seed.Id, true, effective, trivial, reach, visibility, detail));
+            _log($"{seed.Id}：効いている {effective}、自明 {trivial}、層 {reach}{visibility}");
+        }
+
+        // 元のビルドに戻す
+        await _lab.UpAsync(new UpOptions("test", new HashSet<string>(StringComparer.Ordinal), null, false, false), cancellationToken).ConfigureAwait(false);
+        _run.WriteJson("seeds-check.json", results);
+        return results;
+    }
+
+    private sealed record Outcome(bool ScenarioOk, int Steps, string StateHash, string ScreenHash, IReadOnlyList<string> Findings);
+
+    private async Task<Outcome> RunConfirmAsync(SeedDefinition seed, string label, CancellationToken cancellationToken)
+    {
+        await _lab.ResetAsync("initial", false, cancellationToken).ConfigureAwait(false);
+        await _lab.TestApiAsync("POST", "/__verify/seed", new JsonObject { ["seed"] = 20261126 }, cancellationToken).ConfigureAwait(false);
+        var baseline = await JudgeContext.CaptureAsync(_lab, cancellationToken).ConfigureAwait(false);
+        var startSeq = _lab.Records.Activity().LastSeq;
+        var runner = new ScenarioRunner(_lab, _run, _log);
+        var result = await runner.RunAsync(Scenario.Load(seed.ConfirmPath), cancellationToken).ConfigureAwait(false);
+        await _lab.SettleAsync(TimeSpan.FromMilliseconds(600), TimeSpan.FromSeconds(20), cancellationToken).ConfigureAwait(false);
+        var judges = await JudgeRunner.RunAsync(new JudgeContext(_lab, _run, baseline), JudgeRunner.Stage1(), cancellationToken).ConfigureAwait(false);
+        var findings = judges.SelectMany(r => r.Findings).Where(f => f.Stage == 1 && f.Category != "coverage").Select(f => $"{f.Judge}:{f.Rule}").Distinct(StringComparer.Ordinal).ToList();
+        var keys = _lab.Config.State.Keys.Values.Where(k => k.Source is SqlSource or SocketSource && !_lab.Config.State.Determinism.Volatile.Contains(k.Name)).ToList();
+        var state = await new StateReader(_lab).ReadAsync(keys, null, "main", cancellationToken).ConfigureAwait(false);
+        var normalized = Determinism.DeterminismRunner.Normalize(new SortedDictionary<string, JsonNode?>(state.ToDictionary(r => r.Key, r => (JsonNode?)new JsonArray(r.Values.Select(v => (JsonNode?)new JsonArray(v.Entity, v.Value?.DeepClone())).ToArray()), StringComparer.Ordinal), StringComparer.Ordinal), _lab.Config.State.Determinism, Determinism.DeterminismRunner.ConnectionOrder(_lab, startSeq));
+        var stateHash = Hashing.Sha256Hex(Json.Canonical(new JsonObject(normalized.Select(p => new KeyValuePair<string, JsonNode?>(p.Key, p.Value?.DeepClone())))));
+        var screens = result.Steps.Where(s => s.Kind == "browser_screenshot").Select(s => s.Data?.ToJsonString() ?? string.Empty);
+        _run.WriteJson($"seeds/{seed.Id}-{label}.json", new JsonObject { ["scenario_ok"] = result.Ok, ["error"] = result.Error, ["findings"] = new JsonArray(findings.Select(f => (JsonNode?)JsonValue.Create(f)).ToArray()), ["state_hash"] = stateHash });
+        return new Outcome(result.Ok, result.Steps.Count, stateHash, Hashing.Sha256Hex(string.Join("|", screens)), findings);
+    }
+}
+
+/// <summary>層ごとの検出率（第7章、第19.6節、第19.11節）。</summary>
+public sealed record LayerDetection(string Layer, int Seeded, int Detected, double Rate, double Lower, double Upper, bool Estimable);
+
+/// <summary>校正の結果。</summary>
+public sealed record CalibrationResult(string Id, DateTimeOffset At, IReadOnlyList<string> Seeds, IReadOnlyList<string> Detected, IReadOnlyList<LayerDetection> Layers, double? OverallLower, int RealBugs, double? ResidualUpper, string Basis);
+
+/// <summary>
+/// 校正（第7章「バグ埋め込みによる検出率の測定」）。校正用ビルド（パッチを当てた、配備できないビルド）で、
+/// 探索（段階1の機械判定と、探索役のループ）を回し、仕込んだバグのうち見つかった割合を層ごとに出す。
+/// 見つかったかどうかは、パッチなしのビルドでの同じ判定と比べて、パッチありでだけ出たものがあるかで決める（第22.5節）。
+/// 残存バグは、実バグの数と、検出率の信頼区間の下限から出す（第19.6節、Mills の方法）。
+/// </summary>
+public sealed class Calibrator
+{
+    private readonly Lab.Lab _lab;
+    private readonly Run _run;
+    private readonly Action<string> _log;
+
+    /// <summary>作る。</summary>
+    public Calibrator(Lab.Lab lab, Run run, Action<string> log)
+    {
+        _lab = lab;
+        _run = run;
+        _log = log;
+    }
+
+    /// <summary>校正する。checks は品質チェックの結果（層の割り当てに使う）。explore は探索の処理（パッチありのビルドで呼ぶ）。</summary>
+    public async Task<CalibrationResult> RunAsync(IReadOnlyList<SeedDefinition> seeds, IReadOnlyDictionary<string, SeedCheckResult> checks, int realBugs, Func<CancellationToken, Task<IReadOnlyList<Finding>>> explore, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(seeds);
+        ArgumentNullException.ThrowIfNull(checks);
+        ArgumentNullException.ThrowIfNull(explore);
+
+        // 基準（パッチなし）での探索の結果
+        await _lab.UpAsync(new UpOptions("test", new HashSet<string>(StringComparer.Ordinal), null, false, false), cancellationToken).ConfigureAwait(false);
+        var baseFindings = (await explore(cancellationToken).ConfigureAwait(false)).Select(f => f.Fingerprint).ToHashSet(StringComparer.Ordinal);
+
+        // クラッシュ系は他のバグと同じビルドに入れない（第19.6節）。1件ずつ校正用ビルドを作る
+        var detected = new List<string>();
+        foreach (var seed in seeds)
+        {
+            var clone = await SeedStore.PrepareCloneAsync(_lab.Workspace, [seed], "calib-" + seed.Id, cancellationToken).ConfigureAwait(false);
+            await _lab.UpAsync(new UpOptions("test", new HashSet<string>(StringComparer.Ordinal), null, false, false, clone), cancellationToken).ConfigureAwait(false);
+            var found = await explore(cancellationToken).ConfigureAwait(false);
+            var onlyPatched = found.Where(f => !baseFindings.Contains(f.Fingerprint) && f.Category != "coverage").ToList();
+            _run.WriteJson($"calibration/{seed.Id}.json", new JsonObject
+            {
+                ["seed"] = seed.Id,
+                ["detected"] = onlyPatched.Count > 0,
+                ["findings"] = new JsonArray(onlyPatched.Select(f => (JsonNode?)JsonValue.Create(f.Summary)).ToArray()),
+            });
+            if (onlyPatched.Count > 0)
+            {
+                detected.Add(seed.Id);
+            }
+
+            _log($"校正 {seed.Id}：{(onlyPatched.Count > 0 ? "見つかった" : "見つからなかった")}");
+        }
+
+        await _lab.UpAsync(new UpOptions("test", new HashSet<string>(StringComparer.Ordinal), null, false, false), cancellationToken).ConfigureAwait(false);
+
+        // 層ごとの検出率（自明な層 R1V1 は推定から外す。第19.11節）
+        var layers = new List<LayerDetection>();
+        foreach (var group in seeds.GroupBy(s => checks.TryGetValue(s.Id, out var c) ? c.Layer : "unknown"))
+        {
+            var seeded = group.Count();
+            var hit = group.Count(s => detected.Contains(s.Id));
+            var interval = Proportions.ClopperPearson(hit, seeded, 0.95);
+            layers.Add(new LayerDetection(group.Key, seeded, hit, (double)hit / seeded, interval.Lower, interval.Upper, group.Key != "R1V1" && seeded >= 1 && (double)hit / seeded >= 0.3));
+        }
+
+        var estimable = layers.Where(l => l.Layer != "R1V1").ToList();
+        var total = estimable.Sum(l => l.Seeded);
+        var hits = estimable.Sum(l => l.Detected);
+        double? overallLower = total == 0 ? null : Proportions.ClopperPearson(hits, total, 0.95).Lower;
+        double? residual = overallLower is > 0 ? realBugs * (1 / overallLower.Value - 1) : null;
+        var result = new CalibrationResult(_run.Id, DateTimeOffset.UtcNow, seeds.Select(s => s.Id).ToList(), detected, layers, overallLower, realBugs, residual, "generated");
+        _run.WriteJson("calibration.json", result);
+        SeedStore.MarkUsed(_lab.Workspace, seeds.Select(s => s.Id));
+        var summary = Path.Combine(_lab.Workspace.DataDir, "calibration", "latest.json");
+        Directory.CreateDirectory(Path.GetDirectoryName(summary) ?? _lab.Workspace.DataDir);
+        File.WriteAllText(summary, Json.Serialize(result));
+        return result;
+    }
+}
+
+/// <summary>カナリア1件の結果。</summary>
+public sealed record CanaryResult(string Name, string Method, bool Applied, bool Detected, string Detail);
+
+/// <summary>
+/// 毎ループのカナリア（第7.3節、第19.7節）。3〜5個を有効にし、すべて見つかるかを確かめる（死活監視）。
+/// - プロキシ側の注入（アプリのコードを触らない）：遅延、500 の応答
+/// - テスト用ビルドの異常（/__verify/faults。切り替えが要る場面に限る）
+/// 判定は、段階1の機械判定（ボットの対局と汎用の判定・不変条件）で行う。結果は data/calibration/canaries.jsonl に累積する。
+/// </summary>
+public sealed class CanaryRunner
+{
+    private readonly Lab.Lab _lab;
+    private readonly Run _run;
+    private readonly Action<string> _log;
+
+    /// <summary>作る。</summary>
+    public CanaryRunner(Lab.Lab lab, Run run, Action<string> log)
+    {
+        _lab = lab;
+        _run = run;
+        _log = log;
+    }
+
+    /// <summary>回す。</summary>
+    public async Task<(IReadOnlyList<CanaryResult> Results, double CumulativeRate)> RunAsync(int count, int seed, CancellationToken cancellationToken)
+    {
+        var candidates = new List<(string Name, string Method)>();
+        if (await _lab.HasTestApiAsync(cancellationToken).ConfigureAwait(false))
+        {
+            var faults = await _lab.TestApiAsync("GET", "/__verify/faults", null, cancellationToken).ConfigureAwait(false);
+            candidates.AddRange((faults["faults"] as JsonArray ?? []).OfType<JsonObject>().Select(f => (f["name"]?.ToString() ?? string.Empty, "test_api")));
+        }
+
+        candidates.Add(("proxy-500-on-socket", "proxy"));
+        var history = HistoryPath();
+        var used = File.Exists(history) ? File.ReadAllLines(history).Select(l => JsonNode.Parse(l)?["name"]?.ToString()).OfType<string>().ToHashSet(StringComparer.Ordinal) : new HashSet<string>(StringComparer.Ordinal);
+
+        // 使ったことのないものを優先し、毎回違う組み合わせにする
+        var random = new Random(seed);
+        var chosen = candidates.OrderBy(c => used.Contains(c.Name) ? 1 : 0).ThenBy(_ => random.Next()).Take(count).ToList();
+        var results = new List<CanaryResult>();
+        foreach (var (name, method) in chosen)
+        {
+            _log($"カナリア {name}（{method}）");
+            await _lab.ResetAsync("initial", false, cancellationToken).ConfigureAwait(false);
+            var applied = true;
+            if (method == "test_api")
+            {
+                // テスト用APIは enable の後に disable_all を処理するので、2回に分けて送る
+                await _lab.TestApiAsync("POST", "/__verify/faults", new JsonObject { ["disable_all"] = true }, cancellationToken).ConfigureAwait(false);
+                var set = await _lab.TestApiAsync("POST", "/__verify/faults", new JsonObject { ["enable"] = new JsonArray(name) }, cancellationToken).ConfigureAwait(false);
+                applied = (set["faults"] as JsonArray ?? []).OfType<JsonObject>().Any(f => f["name"]?.ToString() == name && f["enabled"]?.GetValue<bool>() == true && f["loaded"]?.GetValue<bool>() != false);
+            }
+            else
+            {
+                var rules = _lab.ReadRules();
+                rules["rules"] = new JsonArray(new JsonObject { ["name"] = name, ["action"] = "status", ["status"] = 500, ["probability"] = 0.2, ["match"] = new JsonObject { ["path_prefix"] = "/socket.io", ["method"] = "POST" } });
+                await _lab.WriteRulesAsync(rules).ConfigureAwait(false);
+                await Task.Delay(700, cancellationToken).ConfigureAwait(false);
+            }
+
+            List<Finding> findings = [];
+            string detail;
+            try
+            {
+                var (games, gameFindings, _) = await new Probes.BotPlayRunner(_lab, _run, _log).RunAsync(1, seed, false, cancellationToken).ConfigureAwait(false);
+                findings = gameFindings.Where(f => f.Category != "coverage").ToList();
+                if (name == "accept-any-choice")
+                {
+                    findings = [.. findings, .. (await new Probes.PhaseProber(_lab, _run, _log).RunAsync(cancellationToken).ConfigureAwait(false)).Where(f => f.Rule == "unoffered_choice_accepted")];
+                }
+
+                detail = findings.Count > 0 ? findings[0].Summary : $"見つからなかった（{games.Count} 対局）";
+            }
+            catch (CustosException e)
+            {
+                detail = "実行できなかった：" + e.Message;
+            }
+            finally
+            {
+                if (method == "test_api")
+                {
+                    await _lab.TestApiAsync("POST", "/__verify/faults", new JsonObject { ["disable_all"] = true }, cancellationToken).ConfigureAwait(false);
+                }
+                else
+                {
+                    var rules = _lab.ReadRules();
+                    rules["rules"] = new JsonArray();
+                    await _lab.WriteRulesAsync(rules).ConfigureAwait(false);
+                }
+            }
+
+            var result = new CanaryResult(name, method, applied, applied && findings.Count > 0, detail);
+            results.Add(result);
+            Directory.CreateDirectory(Path.GetDirectoryName(history) ?? _lab.Workspace.DataDir);
+            await File.AppendAllTextAsync(history, Json.SerializeCompact(new { name, method, applied = result.Applied, detected = result.Detected, at = DateTimeOffset.UtcNow }) + "\n", cancellationToken).ConfigureAwait(false);
+        }
+
+        // 効いた（異常が実際に有効になった）カナリアだけで数える
+        var all = File.ReadAllLines(history).Select(l => JsonNode.Parse(l)).OfType<JsonNode>().Where(n => n["applied"]?.GetValue<bool>() != false).ToList();
+        var rate = all.Count == 0 ? 0 : (double)all.Count(n => n["detected"]?.GetValue<bool>() == true) / all.Count;
+        _run.WriteJson("canaries.json", results);
+        return (results, rate);
+    }
+
+    private string HistoryPath() => Path.Combine(_lab.Workspace.DataDir, "calibration", "canaries.jsonl");
+}
+
+/// <summary>文字列化の補助。</summary>
+internal static class CalibrationText
+{
+    public static string P(double value) => value.ToString("P0", CultureInfo.InvariantCulture);
+}

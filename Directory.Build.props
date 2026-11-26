@@ -1,0 +1,42 @@
+<Project>
+  <!--
+    ソリューション全体に共通のビルド設定（設計書 第12.7節、指示書 制約11・12）。
+    このファイル、Directory.Packages.props、.editorconfig、src/Custos.Analyzers は
+    適合テストと同じく、人間の承認なしに変えない。検査を緩める変更は特に禁止。
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+
+    <!-- null許容参照型を有効にし、警告はすべてエラーとして扱う -->
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <MSBuildTreatWarningsAsErrors>true</MSBuildTreatWarningsAsErrors>
+    <CodeAnalysisTreatWarningsAsErrors>true</CodeAnalysisTreatWarningsAsErrors>
+
+    <!-- コード解析（アナライザー）を有効にし、規則への違反をエラーとして扱う -->
+    <EnableNETAnalyzers>true</EnableNETAnalyzers>
+    <AnalysisLevel>latest-recommended</AnalysisLevel>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+
+    <!-- 再現性（指示書 制約10）：ロックファイルで依存の版を固定する -->
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+    <RestoreLockedMode Condition="'$(CUSTOS_LOCKED_RESTORE)' == 'true'">true</RestoreLockedMode>
+    <Deterministic>true</Deterministic>
+
+    <Version>0.1.0</Version>
+    <Authors>Custos</Authors>
+    <Company>Custos</Company>
+    <Product>Custos</Product>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+  </PropertyGroup>
+
+  <!-- 禁止構文（dynamic、! 演算子、警告の抑止）を検出する自前のアナライザーを全プロジェクトに付ける -->
+  <ItemGroup Condition="'$(MSBuildProjectName)' != 'Custos.Analyzers'">
+    <ProjectReference Include="$(MSBuildThisFileDirectory)src/Custos.Analyzers/Custos.Analyzers.csproj"
+                      OutputItemType="Analyzer"
+                      ReferenceOutputAssembly="false"
+                      PrivateAssets="all" />
+  </ItemGroup>
+</Project>

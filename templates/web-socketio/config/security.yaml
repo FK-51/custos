@@ -1,0 +1,11 @@
+# 攻撃目標とフラグ（設計書 第18.5節、第25.7節の読み替え）
+version: 1
+goals: [hidden_info, seat_hijack, rule_break, server_down, server_intrusion, xss, sqli, game_stall]
+not_applicable: [pii_theft]          # 個人情報と課金がないため対象外（第25.7節）
+flags:
+  secret:
+    file: /srv/halpal/secret_flag.txt # 侵入の目標：サーバー上のフラグファイル（セッションごとに固有の目印）
+  state_keys: [player.reconnect_token] # 本人にだけ送ってよい秘密の値（第25.6節の user_id）
+markers:
+  xss: true    # 目印を付けたスクリプトを利用者名と部屋名に入れる
+  sqli: true   # SQL の断片を利用者名と部屋名に入れる

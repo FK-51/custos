@@ -1,0 +1,8 @@
+# TODO: アプリに合わせて書き換える（ひな形。元は halpal の検証用リポジトリ）
+# 2人の対局を始める（B-2 の完了待ちの確認に使う）
+version: 1
+name: game-start
+steps:
+  - include: { file: two-players-start.yaml }
+  - wait: { user: alice, event: yourTurn, timeout_ms: 15000, optional: true }
+  - set: { players: [alice, bob] }

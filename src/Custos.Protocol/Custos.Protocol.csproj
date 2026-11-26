@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    ゲームエンジン向けプロトコル（設計書 第14.7節）のメッセージの型。
+    Unity でも読み込めるよう netstandard2.1 で定義し、直列化の方式には依存しない。
+  -->
+  <PropertyGroup>
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <ImplicitUsings>disable</ImplicitUsings>
+  </PropertyGroup>
+</Project>

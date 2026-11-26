@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- ブラウザの操作（画面を開く、操作する、スクリーンショット、コンソールのエラー）。利用者側のネットワークにだけつなぐ。 -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>custos-browser</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Custos.Agent.Common/Custos.Agent.Common.csproj" />
+    <PackageReference Include="Microsoft.Playwright" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="ja">
+<head><meta charset="utf-8"><title>Custos reference app</title></head>
+<body>
+  <main id="lobby">
+    <input id="name" placeholder="おなまえは？">
+    <input id="roomNameInput" placeholder="部屋の名前">
+    <button class="create-btn">部屋を作る</button>
+    <button class="show-rooms-btn">部屋の一覧</button>
+    <div id="rooms"></div>
+    <p>部屋のID：<span id="room-id-display"></span></p>
+  </main>
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const socket = io({ transports: ['polling', 'websocket'] });
+    const $ = (s) => document.querySelector(s);
+    function register(cb) {
+      socket.emit('registPlayer', { name: $('#name').value || 'guest' }, (r) => cb(r));
+    }
+    $('.create-btn').addEventListener('click', () => register(() => {
+      socket.emit('createRoom', { roomName: $('#roomNameInput').value }, (r) => {
+        socket.emit('joinRoom', r.roomId, () => { $('#room-id-display').textContent = r.roomId; });
+      });
+    }));
+    $('.show-rooms-btn').addEventListener('click', () => {
+      socket.emit('showRooms', {}, (r) => {
+        $('#rooms').innerHTML = r.rooms.map((x) => '<div class="room-row"><button class="room-entry" data-id="' + x.id + '">' + x.name + ' | ' + x.players + ' / 2</button></div>').join('');
+      });
+    });
+  </script>
+</body>
+</html>

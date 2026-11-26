@@ -1,0 +1,6 @@
+version: 1
+name: register
+steps:
+  - connect: { user: "{user}" }
+  - emit: { user: "{user}", event: registPlayer, args: [{ name: "{name}" }], ack: true }
+  - disconnect: { user: "{user}" }

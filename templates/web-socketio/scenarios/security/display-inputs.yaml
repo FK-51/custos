@@ -1,0 +1,21 @@
+# TODO: アプリに合わせて書き換える（ひな形。元は halpal の検証用リポジトリ）
+# 表示される入力の検査（第25.6節）。攻撃役 mallory が {payload} を利用者名と部屋名に入れ、
+# 被害者のブラウザ（ページ victim）が部屋の一覧と待機画面でそれを見る。
+version: 1
+name: display-inputs
+steps:
+  - connect: { user: mallory, via: attacker }
+  - emit: { user: mallory, via: attacker, event: registPlayer, args: [{ name: "{payload}" }], save: { m_id: "$[0].playerId" } }
+  - emit: { user: mallory, via: attacker, event: createRoom, args: [{ maxPlayers: 2, roomName: "{payload}" }], save: { room: "$[0].roomId" } }
+  - emit: { user: mallory, via: attacker, event: joinRoom, args: ["{room}"] }
+  - browser_open: { page: victim }
+  - browser_wait: { page: victim, selector: "#name", timeout_ms: 20000 }
+  - browser_fill: { page: victim, selector: "#name", value: "victim-{run}" }
+  - browser_click: { page: victim, selector: ".show-rooms-btn" }
+  - browser_wait: { page: victim, selector: "#rooms .room-entry", timeout_ms: 10000 }
+  - sleep: { ms: 800 }
+  - browser_screenshot: { page: victim, name: "inputs-room-list" }
+  - browser_click: { page: victim, selector: "#rooms .room-entry" }
+  - sleep: { ms: 1500 }
+  - browser_screenshot: { page: victim, name: "inputs-joined" }
+  - set: { pages: [victim] }

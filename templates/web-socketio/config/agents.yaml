@@ -1,0 +1,19 @@
+# 役割ごとのエージェントとモデル（設計書 第18.9節、第21.11節）。Claude だけを使い、検証役には探索AIと別のモデルを使う。
+version: 1
+defaults:
+  agent: claude-code
+roles:
+  developer:        { agent: claude-code, model: claude-opus-5-5 }
+  explorer:         { agent: claude-code, model: claude-sonnet-5-5 }
+  attacker:         { agent: claude-code, model: claude-sonnet-5-5 }
+  fixer:            { agent: claude-code, model: claude-opus-5-5 }
+  verifier:         { agent: claude-code, model: claude-opus-5-5 }
+  seed_author:      { agent: claude-code, model: claude-opus-5-5 }
+  reference_author: { agent: claude-code, model: claude-sonnet-5-5 }
+  arbiter:          { agent: claude-code, model: claude-opus-5-5 }
+constraints:
+  - differ: [explorer, verifier]
+  - differ: [explorer, seed_author]
+  - differ: [developer, reference_author]
+on_violation: warn
+max_budget_usd_per_run: 2

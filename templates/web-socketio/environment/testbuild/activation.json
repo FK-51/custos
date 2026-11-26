@@ -1,0 +1,6 @@
+{
+  "VERIFY_TEST_API": "1",
+  "VERIFY_TEST_API_PORT": "3999",
+  "VERIFY_TEST_API_PROCESS_MATCH": "packages/server/dist/index\\.js",
+  "VERIFY_TEST_API_FAULTS": "/opt/verify-faults/faults.js"
+}

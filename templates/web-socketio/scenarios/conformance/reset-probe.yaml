@@ -1,0 +1,9 @@
+# TODO: アプリに合わせて書き換える（ひな形。元は halpal の検証用リポジトリ）
+# 利用者の登録、部屋の作成、数手の着手（B-1 のリセットの確認に使う。指示書 タスク4）
+version: 1
+name: reset-probe
+steps:
+  - include: { file: two-players-start.yaml }
+  - bot: { users: [alice, bob], policy: random, seed: 3, max_moves: 6, timeout_ms: 60000 }
+  - settle: { quiet_ms: 500 }
+  - expect: { state: game.move_count, min: 1 }

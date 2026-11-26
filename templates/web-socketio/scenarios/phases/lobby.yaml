@@ -1,0 +1,9 @@
+# TODO: アプリに合わせて書き換える（ひな形。元は halpal の検証用リポジトリ）
+# 局面 lobby：部屋に入っていない利用者（登録済みと未登録）。{room} は存在しない部屋
+version: 1
+name: phase-lobby
+steps:
+  - connect: { user: anon }
+  - connect: { user: loner }
+  - emit: { user: loner, event: registPlayer, args: [{ name: "loner-{run}" }], save: { loner_token: "$[0].reconnectToken" } }
+  - set: { room: "no-such-room-{run}", actors: { anonymous: anon, outsider: loner } }

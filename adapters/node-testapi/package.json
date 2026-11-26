@@ -1,0 +1,21 @@
+{
+  "name": "custos-node-testapi",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Node 向けのテスト用API（設計書 第14.6節、第25.11節）。テスト用ビルドに preload で組み込む。本番用ビルドには入れない。",
+  "license": "UNLICENSED",
+  "main": "index.js",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "test": "node --test --test-timeout=60000 test/testapi.test.js"
+  },
+  "dependencies": {
+    "@sinonjs/fake-timers": "15.5.0"
+  },
+  "devDependencies": {
+    "socket.io": "4.8.1",
+    "socket.io-client": "4.8.3"
+  }
+}

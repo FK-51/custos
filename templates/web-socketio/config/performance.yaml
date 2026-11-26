@@ -1,0 +1,22 @@
+# SLO と換算係数（設計書 第18.7節、第26.4節）。値は仮。最初の計測の結果を見て決め直す。
+version: 1
+slo:
+  - id: move_reflection_p99
+    profile: mini-1
+    scenario: bot_games
+    concurrent_users: 100          # 同時50対局（仮の負荷）
+    metric: latency_p99
+    threshold: 300ms
+  - id: event_loop_lag_p99
+    profile: mini-1
+    scenario: bot_games
+    concurrent_users: 100
+    metric: probe_p99
+    threshold: 50ms
+  - id: error_rate
+    profile: mini-1
+    scenario: bot_games
+    concurrent_users: 100
+    metric: error_rate
+    threshold: 0.1%
+calibration: []

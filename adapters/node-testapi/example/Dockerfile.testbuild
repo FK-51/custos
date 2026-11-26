@@ -1,0 +1,18 @@
+# テスト用ビルドの例（検証用リポジトリの environment/ に置いて使う）。
+# 本番用ビルドのイメージ（アプリの Dockerfile をそのまま使ったもの）の上に、テスト用APIを重ねる。
+# アプリのリポジトリは変えない。本番用ビルドには入れない（設計書 第14.9節）。
+#
+#   docker build -f Dockerfile.testbuild --build-arg APP_IMAGE=<本番用ビルドのイメージ> -t <テスト用ビルド> <文脈>
+#
+# 文脈には node-testapi/（この部品の index.js、lib/、package.json、package-lock.json）と faults.js を置く。
+ARG APP_IMAGE
+FROM ${APP_IMAGE}
+USER root
+COPY node-testapi/ /opt/verify-testapi/
+RUN cd /opt/verify-testapi && npm ci --omit=dev --no-audit --no-fund --ignore-scripts \
+ && chmod -R a+rX /opt/verify-testapi
+COPY faults.js /opt/verify-faults/faults.js
+USER node
+ENV NODE_OPTIONS="--require /opt/verify-testapi/index.js" \
+    VERIFY_TEST_API=1 \
+    VERIFY_TEST_API_FAULTS=/opt/verify-faults/faults.js

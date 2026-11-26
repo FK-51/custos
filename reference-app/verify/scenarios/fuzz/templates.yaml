@@ -1,0 +1,9 @@
+version: 1
+name: templates
+steps:
+  - emit: { event: registPlayer, args: [{ name: "fz" }] }
+  - emit: { event: createRoom, args: [{ roomName: "fz" }] }
+  - emit: { event: joinRoom, args: ["{room}"] }
+  - emit: { event: showRooms, args: [{}] }
+  - emit: { event: ready, args: [{ roomId: "{room}" }] }
+  - emit: { event: playerChoice, args: [{ roomId: "{room}", choice: 1 }] }

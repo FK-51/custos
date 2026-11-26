@@ -1,0 +1,7 @@
+version: 1
+name: fuzz-context
+steps:
+  - include: { file: two-players-start.yaml }
+  - connect: { user: eve }
+  - emit: { user: eve, event: registPlayer, args: [{ name: "eve-{run}" }], ack: true }
+  - set: { fuzz_member: alice, fuzz_outsider: eve, fuzz_victim_id: "{bob_id}" }

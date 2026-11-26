@@ -1,0 +1,23 @@
+# 抜き取り検証（設計書 第18.8節、第21章、第26.2節）
+version: 1
+confidence: 95%
+unit: check_target
+categories:
+  core_flow:              # 対局の結果が変わる不具合（重大度 高、倍率 10）
+    error_upper: auto
+    fallback_error_upper: 0.1%
+  display:                # 状態は正しいが表示が誤っている（中、倍率 3）
+    error_upper: auto
+    fallback_error_upper: 1%
+  visual:                 # 見た目の崩れ、文言の誤り（低、倍率 1）
+    error_upper: auto
+    fallback_error_upper: 1%
+  security:               # 手札や再接続トークンの漏洩、席の乗っ取りなど（致命的）
+    error_upper: none     # プログラム判定でゼロを目指す
+verifier:
+  role: verifier
+  blind: true
+min_verifier_sensitivity: 0.7
+human:
+  audit_per_release: 50
+free_exploration_share: 20%

@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- コマンド custos の入口（管理側のホストで動く） -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>custos</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Custos.Core/Custos.Core.csproj" />
+    <ProjectReference Include="../Custos.Web.SocketIO/Custos.Web.SocketIO.csproj" />
+    <ProjectReference Include="../Custos.Statistics/Custos.Statistics.csproj" />
+    <ProjectReference Include="../Custos.Registry/Custos.Registry.csproj" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,20 @@
+{
+  "name": "custos-oracle-node",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Socket.IO の読み解きの正解を、公式の JavaScript の実装で作る（テスト専用。指示書 タスク5）。版は対象アプリ（halpal）の package-lock.json と同じにする。",
+  "license": "UNLICENSED",
+  "engines": {
+    "node": "20.x"
+  },
+  "dependencies": {
+    "engine.io": "6.6.9",
+    "engine.io-client": "6.6.6",
+    "engine.io-parser": "5.2.3",
+    "socket.io": "4.8.1",
+    "socket.io-adapter": "2.5.8",
+    "socket.io-client": "4.8.3",
+    "socket.io-parser": "4.2.7",
+    "ws": "8.21.3"
+  }
+}

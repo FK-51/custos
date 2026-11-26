@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- 統計（第5章、第7章、第8章、第10章、第19章、第21章、第22章、第23章）とリリース判定 -->
+  <ItemGroup>
+    <ProjectReference Include="../Custos.Core/Custos.Core.csproj" />
+  </ItemGroup>
+</Project>

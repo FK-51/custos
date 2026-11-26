@@ -1,0 +1,42 @@
+version: 1
+actors: [owner, member, current_player, other_player, outsider, anonymous]
+defaults: { authority: server, validation: full, scope: economy }
+state:
+  player.name:            { authority: client, validation: plausibility, scope: visible_to_others, visibility: all }
+  player.socket_id:       { authority: server, validation: full, scope: persisted, visibility: members }
+  player.reconnect_token: { authority: server, validation: full, scope: persisted, visibility: owner }
+  room.name:              { authority: client, validation: plausibility, scope: visible_to_others, visibility: all }
+  room.owner_id:          { authority: server, validation: full, scope: persisted, visibility: members }
+  room.playing:           { authority: server, validation: full, scope: persisted, visibility: all }
+  room.member_count:      { authority: server, validation: full, scope: persisted, visibility: all }
+  game.move_count:        { authority: server, validation: full, scope: economy, visibility: none }
+  game.winner:            { authority: server, validation: full, scope: economy, visibility: members }
+  view.my_hands:          { authority: server, validation: full, scope: economy, visibility: owner }
+  view.my_played:         { authority: server, validation: full, scope: economy, visibility: members }
+  view.turn_number:       { authority: server, validation: full, scope: economy, visibility: members }
+  view.choices:           { authority: server, validation: full, scope: economy, visibility: owner }
+  ui.room_id_display:     { authority: server, validation: full, scope: self, visibility: members }
+ownership:
+  room: { owner: room.owner_id, read: [owner, member, outsider], write: [owner] }
+inputs:
+  "event registPlayer": { accepts: [name] }
+  "event createRoom":   { accepts: [roomName] }
+  "event joinRoom":     { accepts: [] }
+  "event showRooms":    { accepts: [] }
+  "event ready":        { accepts: [roomId] }
+  "event playerChoice": { accepts: [roomId, choice] }
+phases:
+  lobby:
+    allowed: { anyone: [registPlayer, createRoom, joinRoom, showRooms] }
+  playing:
+    allowed:
+      anyone: [registPlayer, createRoom, showRooms]
+      current_player: [playerChoice]
+      other_player: []
+sent:
+  yourTurn:
+    paths: ["$.now.myTurnNumber", "$.now.myHands", "$.now.myPlayed", "$.now.otherPlayed", "$.now.cardNumber", "$.now.wins", "$.now.trick", "$.choices", "$.kind", "$.deadline"]
+  anotherTurn:
+    paths: ["$.now.myTurnNumber", "$.now.myHands", "$.now.myPlayed", "$.now.otherPlayed", "$.now.cardNumber", "$.now.wins", "$.now.trick"]
+  redirectToResult:
+    paths: ["$.url"]

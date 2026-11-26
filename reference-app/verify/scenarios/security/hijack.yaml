@@ -1,0 +1,9 @@
+version: 1
+name: hijack
+steps:
+  - include: { file: two-players-start.yaml }
+  - connect: { user: mallory, via: attacker }
+  - emit: { user: mallory, via: attacker, event: registPlayer, args: [{ name: "mallory-{run}" }], ack: true }
+  - set: { hijack: { victim: bob, attacker: mallory, turn_key: view.turn_number, played_key: view.my_played } }
+  - emit: { user: mallory, via: attacker, event: playerChoice, args: [{ roomId: "{room}", choice: 1 }] }
+  - sleep: { ms: 1000 }

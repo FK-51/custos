@@ -1,0 +1,24 @@
+# TODO: アプリに合わせて書き換える（ひな形。元は halpal の検証用リポジトリ）
+# 席の乗っ取りの検査（第25.6節）。alice と bob（被害者）が対局中に、部外者 mallory（攻撃役のコンテナ）が、
+# 対局中に得られる情報（部屋のID、相手の playerId）だけを使って、bob の席を使おうとする。
+version: 1
+name: hijack
+steps:
+  - include: { file: two-players-start.yaml }
+  - connect: { user: mallory, via: attacker }
+  - emit: { user: mallory, via: attacker, event: registPlayer, args: [{ name: "mallory-{run}" }], save: { mallory_token: "$[0].reconnectToken" } }
+  - set: { hijack: { victim: bob, attacker: mallory, turn_key: view.turn_number, played_key: view.my_played } }
+  # 公開されている値で、再接続（席の付け替え）を試す
+  - emit: { user: mallory, via: attacker, event: changeSocketid, args: [{ token: "{bob_id}", roomId: "{room}" }] }
+  - emit: { user: mallory, via: attacker, event: changeSocketid, args: [{ token: "{mallory_token}", roomId: "{room}" }] }
+  - emit: { user: mallory, via: attacker, event: changeSocketid, args: [{ id: "{bob_id}", roomId: "{room}" }] }
+  - emit: { user: mallory, via: attacker, event: changeSocketid, args: [{ token: "", roomId: "{room}" }] }
+  # 観戦者として入ってから、手を送る
+  - emit: { user: mallory, via: attacker, event: spectateRoom, args: [{ roomId: "{room}" }], ack: true }
+  - emit: { user: mallory, via: attacker, event: playerChoice, args: [{ roomId: "{room}", choice: 1 }] }
+  - emit: { user: mallory, via: attacker, event: playerChoice, args: [{ roomId: "{room}", choice: 1, playerId: "{bob_id}" }] }
+  - emit: { user: mallory, via: attacker, event: playerSurrender, args: [{ roomId: "{room}", playerId: "{bob_id}" }] }
+  - emit: { user: mallory, via: attacker, event: playerAction, args: ["{room}", { now: { myHands: [10, 10] } }] }
+  # 参加者として入ろうとする（満員・対局中の部屋）
+  - emit: { user: mallory, via: attacker, event: joinRoom, args: ["{room}"], ack: true }
+  - sleep: { ms: 1500 }

@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- 共通コア：設定、結果の保存、適合テストの実行、統計、登録簿、コミットの入口、校正、抜き取り検証、リリース判定 -->
+  <ItemGroup>
+    <PackageReference Include="YamlDotNet" />
+    <PackageReference Include="Microsoft.Data.Sqlite" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Custos.Core.Tests" />
+  </ItemGroup>
+</Project>

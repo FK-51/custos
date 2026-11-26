@@ -1,0 +1,12 @@
+# TODO: アプリに合わせて書き換える（ひな形。元は halpal の検証用リポジトリ）
+# 局面 finished：alice と bob の対局が終わった（ボットで最後まで）。eve は部外者、anon は未登録
+version: 1
+name: phase-finished
+steps:
+  - include: { file: two-players-start.yaml }
+  - bot: { users: [alice, bob], policy: random, seed: 11, until: end, timeout_ms: 300000, stall_ms: 30000 }
+  - settle: { quiet_ms: 500 }
+  - connect: { user: eve }
+  - emit: { user: eve, event: registPlayer, args: [{ name: "eve-{run}" }], save: { eve_token: "$[0].reconnectToken" } }
+  - connect: { user: anon }
+  - set: { actors: { owner: alice, member: bob, outsider: eve, anonymous: anon } }

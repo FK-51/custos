@@ -1,0 +1,27 @@
+version: 1
+project: refapp
+public_endpoint:
+  host: play.example.test
+  port: 8080
+app:
+  build:
+    context: "${APP_REPO}"
+    dockerfile: Dockerfile
+  image_pins: {}
+  environment:
+    NODE_ENV: production
+  command: ["node", "server.js"]
+  port: 3000
+  server_port: 3000
+  data_dir: /app/data
+  db_file: ref.db
+  health_path: /
+  socketio_path: /socket.io/
+  user: node
+nodes:
+  honest_clients: 1
+  attacker_clients: 1
+  browsers: 1
+  sandbox: false
+egress_allow: []
+resource_profiles: {}

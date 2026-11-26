@@ -1,0 +1,9 @@
+version: 1
+choice_event: yourTurn
+choices_path: "$.choices"
+kind_path: "$.kind"
+reply_event: playerChoice
+reply_template: { roomId: "{room}", choice: "{choice}" }
+acks: []
+end_events: [redirectToResult]
+room_key: room

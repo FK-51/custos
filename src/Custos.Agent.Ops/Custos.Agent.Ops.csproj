@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- 管理側の操作（DBの読み取り専用の読み取り、スナップショット、差し替え、到達性の確認）。アプリ側のネットワークにだけつなぐ。 -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>custos-ops</AssemblyName>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Custos.Agent.Common/Custos.Agent.Common.csproj" />
+    <PackageReference Include="Microsoft.Data.Sqlite" />
+  </ItemGroup>
+</Project>

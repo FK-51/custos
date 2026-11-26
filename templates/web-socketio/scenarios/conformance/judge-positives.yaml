@@ -1,0 +1,33 @@
+# TODO: アプリに合わせて書き換える（ひな形。元は halpal の検証用リポジトリ）
+# 判定器の陽性の確認（適合テスト D-1）：不変条件ごとに、違反するデータを作る SQL。
+# 管理側から DB の「複製」に対して実行し、不変条件が反応するかを確かめる（アプリの DB は変えない）。
+version: 1
+name: judge-positives
+steps:
+  - set:
+      invariant: log_sequence_contiguous
+      sql: >
+        INSERT INTO GameSession (id, roomId, startedAt) VALUES ('d1-game', 'd1-room', 0);
+        INSERT INTO GameLogAction (gameSessionId, sequenceNumber, actionType, changesJson, createdAt) VALUES ('d1-game', 5, 'draw', '[]', 0);
+  - set:
+      invariant: room_capacity
+      sql: >
+        INSERT INTO Player (id, name, updatedAt, reconnectToken) VALUES ('d1-p1', 'p1', 0, 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
+        INSERT INTO Player (id, name, updatedAt, reconnectToken) VALUES ('d1-p2', 'p2', 0, 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb');
+        INSERT INTO Room (id, ownerId, maxPlayers, updatedAt) VALUES ('d1-room', 'd1-p1', 1, 0);
+        INSERT INTO RoomPlayer (id, roomId, playerId) VALUES ('d1-rp1', 'd1-room', 'd1-p1');
+        INSERT INTO RoomPlayer (id, roomId, playerId) VALUES ('d1-rp2', 'd1-room', 'd1-p2');
+  - set:
+      invariant: registered_player_has_token
+      sql: >
+        INSERT INTO Player (id, name, updatedAt, reconnectToken) VALUES ('d1-nt', 'no-token', 0, NULL);
+  - set:
+      invariant: card_conservation
+      sql: >
+        INSERT INTO GameSession (id, roomId, startedAt) VALUES ('d1-cons', 'd1-room', 0);
+        INSERT INTO GameLogAction (gameSessionId, sequenceNumber, actionType, changesJson, stateSnapshotJson, createdAt)
+        VALUES ('d1-cons', 0, 'initial_draw', '[]', '{"deck":[{"number":1,"instanceId":1}],"reincarnation":[],"players":[{"hands":[],"live":true}],"played":[[]]}', 0);
+  - set:
+      invariant: ended_session_has_result
+      sql: >
+        INSERT INTO GameSession (id, roomId, startedAt, endedAt) VALUES ('d1-end', 'd1-room', 0, 1);

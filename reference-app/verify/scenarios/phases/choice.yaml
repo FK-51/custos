@@ -1,0 +1,8 @@
+version: 1
+name: phase-playing
+steps:
+  - include: { file: two-players-start.yaml }
+  - connect: { user: eve }
+  - emit: { user: eve, event: registPlayer, args: [{ name: "eve-{run}" }], ack: true }
+  - whose_turn: { users: [alice, bob], save_current: current, save_other: other, timeout_ms: 20000 }
+  - set: { actors: { current_player: "{current}", other_player: "{other}", outsider: eve } }

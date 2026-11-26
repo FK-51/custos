@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Node.js + Socket.IO + SQLite 構成のアダプタ（管理側）：起動、リセット、記録の読み取り、状態の読み取り、完了待ち、判定器 -->
+  <ItemGroup>
+    <ProjectReference Include="../Custos.Core/Custos.Core.csproj" />
+    <ProjectReference Include="../Custos.SocketIO.Wire/Custos.SocketIO.Wire.csproj" />
+    <ProjectReference Include="../Custos.Statistics/Custos.Statistics.csproj" />
+    <ProjectReference Include="../Custos.Registry/Custos.Registry.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Custos.Web.SocketIO.Tests" />
+  </ItemGroup>
+</Project>

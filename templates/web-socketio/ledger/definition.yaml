@@ -1,0 +1,43 @@
+# TODO: アプリに合わせて書き換える
+# 確認対象の台帳の定義（設計書 第21.10節）。確認対象は「対象 × 状況の型 × 観点」の組。
+# 状況の型は、状態に対する条件（通信の記録の表 sent / recv を引く SQL）として書く。1行でも返れば、その状況に到達した。
+# {target} は対象（カードの番号など）、{from} と {to} は試行の記録の範囲。
+version: 1
+free_exploration_share: 20%
+situations:
+  normal:
+    description: 通常どおり使う（効果が解決された）
+    condition_sql: "SELECT seq FROM sent WHERE event = 'cardEffectResult' AND CAST(json_extract(payload, '$.cardNumber') AS TEXT) = '{target}'"
+  barriered:
+    description: 相手がバリアで守られている
+    condition_sql: "SELECT seq FROM sent WHERE event = 'cardEffectResult' AND CAST(json_extract(payload, '$.cardNumber') AS TEXT) = '{target}' AND json_extract(payload, '$.isBarriered') = 1"
+  game_end:
+    description: その手で終局する
+    condition_sql: "SELECT s.seq FROM sent s WHERE s.event = 'cardEffectResult' AND CAST(json_extract(s.payload, '$.cardNumber') AS TEXT) = '{target}' AND EXISTS (SELECT 1 FROM sent e WHERE e.event = 'redirectToResult' AND e.seq > s.seq)"
+  own_turn:
+    description: 自分の手番に送る
+  other_turn:
+    description: 相手の手番に送る
+  shown:
+    description: 画面を表示する
+kinds:
+  card:
+    severity: high
+    targets: ["1", "2", "3", "4", "5", "6", "7", "8", "9"]   # 10（彼女）は場に出せないので、使う対象にしない
+    labels: { "1": 俺, "2": 探偵, "3": エスパー, "4": バリア, "5": 下痢, "6": 対決, "7": 正夢, "8": 能力交換, "9": 悪魔 }
+    situations: [normal, barriered, game_end]
+    viewpoints: [effect_result, opponent_view]
+  event:
+    severity: high
+    from_authority_inputs: true
+    situations: [own_turn, other_turn]
+    viewpoints: [accepted_or_rejected]
+  screen:
+    severity: low
+    targets: [lobby, waiting, game, result]
+    situations: [shown]
+    viewpoints: [layout]
+exclude:
+  - { kind: card, target: "4", situation: barriered }      # バリア自身はバリアに防がれる対象ではない
+  - { kind: card, target: "7", situation: barriered }      # 正夢は自分にだけ効く
+  - { kind: card, target: "4", viewpoint: opponent_view, situation: game_end }

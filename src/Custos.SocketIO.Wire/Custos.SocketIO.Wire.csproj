@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Engine.IO / Socket.IO / WebSocket / HTTP/1.1 の読み解き。プロキシ、生のクライアント、管理側で共有する。判定器は含めない。 -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="Custos.Web.SocketIO.Tests" />
+  </ItemGroup>
+</Project>
