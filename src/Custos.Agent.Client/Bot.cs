@@ -120,6 +120,8 @@ public static class Bot
         var lastProgress = stopwatch.Elapsed;
         while (stopwatch.Elapsed < timeout && !cancellationToken.IsCancellationRequested)
         {
+            // 調べる前に「次のイベント」を取っておく（調べた後に届いたイベントで、すぐに起きられるように）
+            var wake = users.Select(u => Session(sessions, u).NextEvent).ToList();
             var progressed = false;
             foreach (var user in users)
             {
@@ -210,7 +212,10 @@ public static class Bot
                     break;
                 }
 
-                await Task.Delay(20, cancellationToken).ConfigureAwait(false);
+                // 誰かにイベントが届いたらすぐに起きる（以前は 20 ms ごとに見に行っていたので、返答が最大 20 ms 遅れ、
+                // 性能の計測の妥当性（送信の遅れが SLO の 2 % 以内）を負荷側が満たせなかった）。詰みの判定のため、長くても 20 ms で見直す
+                await Task.WhenAny([.. wake, Task.Delay(20, cancellationToken)]).ConfigureAwait(false);
+                cancellationToken.ThrowIfCancellationRequested();
             }
         }
 

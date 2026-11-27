@@ -29,7 +29,7 @@ public static class PerfCommands
             ["all_runs"] = all.Count,
             ["environment_problem"] = environmentProblem,
             ["p99_ms"] = new JsonArray(p99.Select(v => (JsonNode?)JsonValue.Create(v)).ToArray()),
-            ["p99_median_ms"] = p99.Count == 0 ? null : Descriptive.Percentile(p99, 50),
+            ["p99_median_ms"] = p99.Count == 0 ? null : Descriptive.Median(p99), // Percentile の q は 0〜1（以前は 50 を渡して例外で落ちていた）
             ["cv"] = p99.Count < 2 ? null : Descriptive.CoefficientOfVariation(p99),
             ["error_rate_max"] = valid.Count == 0 ? null : valid.Max(v => v.ErrorRate),
             ["memory_growth"] = valid.Count == 0 ? null : valid.Max(v => v.AppMemoryBeforeMb > 0 ? v.AppMemoryAfterMb / v.AppMemoryBeforeMb : 1),

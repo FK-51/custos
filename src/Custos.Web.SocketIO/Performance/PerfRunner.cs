@@ -75,6 +75,7 @@ public static class PerfRunner
         var referenceBefore = await ReferenceWorkloadAsync(lab, cancellationToken).ConfigureAwait(false);
         var memoryBefore = await AppMemoryMbAsync(lab, cancellationToken).ConfigureAwait(false);
         var stealBefore = await ReadCpuStatAsync(lab, cancellationToken).ConfigureAwait(false);
+        var swapBefore = await SwapActivityAsync(lab, cancellationToken).ConfigureAwait(false);
         using var probeCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         var probeTask = ProbeLoopAsync(lab, probeCts.Token);
         var stopwatch = Stopwatch.StartNew();
@@ -97,7 +98,11 @@ public static class PerfRunner
         var memoryAfter = await AppMemoryMbAsync(lab, cancellationToken).ConfigureAwait(false);
         var referenceAfter = await ReferenceWorkloadAsync(lab, cancellationToken).ConfigureAwait(false);
         var stealAfter = await ReadCpuStatAsync(lab, cancellationToken).ConfigureAwait(false);
-        var swap = await SwapUsedAsync(lab, cancellationToken).ConfigureAwait(false);
+        var swapAfter = await SwapActivityAsync(lab, cancellationToken).ConfigureAwait(false);
+
+        // スワップ：計測の間にページの出し入れがあったか（以前は「使用中のスワップが 0 より大きいか」で、
+        // 計測と関係なく前に1ページ出ただけのホストでは、すべての計測が無効になっていた）
+        var swap = swapAfter > swapBefore;
 
         var latencies = (load["latency_ms"] as JsonArray ?? []).Select(v => v?.GetValue<double>() ?? 0).ToList();
         var lags = (load["send_lag_ms"] as JsonArray ?? []).Select(v => v?.GetValue<double>() ?? 0).ToList();
@@ -156,6 +161,7 @@ public static class PerfRunner
         var valid = new List<Measurement>();
         var all = new List<Measurement>();
         var consecutiveInvalid = 0;
+        await WarmUpAsync(lab, cancellationToken).ConfigureAwait(false);
         while (valid.Count < runs)
         {
             var measurement = await MeasureAsync(lab, games, concurrency, seed + all.Count, cancellationToken).ConfigureAwait(false);
@@ -292,13 +298,32 @@ public static class PerfRunner
         ArgumentNullException.ThrowIfNull(lab);
         var slo = SloThreshold(lab) ?? 300;
         var steps = new JsonArray();
+        await WarmUpAsync(lab, cancellationToken).ConfigureAwait(false);
         var capacity = 0;
         var bottleneck = "unknown";
         for (var concurrency = 1; concurrency <= maxConcurrency; concurrency *= 2)
         {
-            var measurement = await MeasureAsync(lab, concurrency * 2, concurrency, 41 + concurrency, cancellationToken).ConfigureAwait(false);
-            run.AppendJsonLine("perf/capacity.jsonl", measurement.ToJson());
-            var within = measurement.State != MeasurementState.Invalid && measurement.P99Ms <= slo && measurement.ErrorRate <= 0.001;
+            // 無効な計測（負荷側の遅れ、基準ワークロードのずれなど）は「基準を守れない」ではなく「分からない」なので、
+            // 測り直す（3回続けて無効なら環境の問題として止める。第23.4節。以前は1回目の無効で容量 0 になっていた）
+            Measurement? measurement = null;
+            for (var attempt = 0; attempt < 3; attempt++)
+            {
+                measurement = await MeasureAsync(lab, concurrency * 2, concurrency, 41 + concurrency + (attempt * 1000), cancellationToken).ConfigureAwait(false);
+                run.AppendJsonLine("perf/capacity.jsonl", measurement.ToJson());
+                if (measurement.State != MeasurementState.Invalid)
+                {
+                    break;
+                }
+            }
+
+            if (measurement == null || measurement.State == MeasurementState.Invalid)
+            {
+                steps.Add(new JsonObject { ["concurrency"] = concurrency, ["state"] = "Invalid", ["reasons"] = new JsonArray((measurement?.Reasons ?? []).Select(r => (JsonNode?)JsonValue.Create(r)).ToArray()) });
+                bottleneck = "environment";
+                break;
+            }
+
+            var within = measurement.P99Ms <= slo && measurement.ErrorRate <= 0.001;
             steps.Add(new JsonObject { ["concurrency"] = concurrency, ["p99_ms"] = measurement.P99Ms, ["error_rate"] = measurement.ErrorRate, ["state"] = measurement.State.ToString(), ["within_slo"] = within });
             if (!within)
             {
@@ -353,6 +378,12 @@ public static class PerfRunner
     }
 
     /// <summary>基準ワークロード（決まった小さな計算）の所要時間（第23.1節）。</summary>
+    /// <summary>
+    /// 計測の前に基準ワークロードを一度回して捨てる。起動直後の1回目は遅く（実測で約3倍）、最初の計測が
+    /// 「基準ワークロードがずれた」で毎回無効になっていた。
+    /// </summary>
+    private static Task<double> WarmUpAsync(Lab.Lab lab, CancellationToken cancellationToken) => ReferenceWorkloadAsync(lab, cancellationToken);
+
     private static async Task<double> ReferenceWorkloadAsync(Lab.Lab lab, CancellationToken cancellationToken)
     {
         var watch = Stopwatch.StartNew();
@@ -373,11 +404,14 @@ public static class PerfRunner
         return parts.Count >= 8 ? (parts.Sum(), parts[7]) : (0, 0);
     }
 
-    private static async Task<bool> SwapUsedAsync(Lab.Lab lab, CancellationToken cancellationToken)
+    /// <summary>ホストのスワップの出し入れの累計（/proc/vmstat の pswpin + pswpout。ページ数）。</summary>
+    private static async Task<long> SwapActivityAsync(Lab.Lab lab, CancellationToken cancellationToken)
     {
-        var result = await lab.Docker.RunAsync(["exec", Containers.Ops(lab.Project), "sh", "-c", "grep -E '^(SwapTotal|SwapFree)' /proc/meminfo"], TimeSpan.FromSeconds(20), cancellationToken: cancellationToken).ConfigureAwait(false);
-        var values = result.StandardOutput.Split('\n', StringSplitOptions.RemoveEmptyEntries).Select(l => long.TryParse(l.Split(':')[1].Trim().Split(' ')[0], NumberStyles.Integer, CultureInfo.InvariantCulture, out var v) ? v : 0).ToList();
-        return values.Count == 2 && values[0] - values[1] > 0;
+        var result = await lab.Docker.RunAsync(["exec", Containers.Ops(lab.Project), "sh", "-c", "grep -E '^(pswpin|pswpout) ' /proc/vmstat"], TimeSpan.FromSeconds(20), cancellationToken: cancellationToken).ConfigureAwait(false);
+        return result.StandardOutput.Split('\n', StringSplitOptions.RemoveEmptyEntries)
+            .Select(l => l.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+            .Where(p => p.Length == 2)
+            .Sum(p => long.TryParse(p[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out var v) ? v : 0);
     }
 
     /// <summary>計測の間、アプリの応答時間を外から測る（イベントループの遅れの近似。第25.2節）。</summary>

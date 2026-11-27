@@ -32,6 +32,7 @@ public sealed class UserSession : IAsyncDisposable
     private readonly object _gate = new();
     private readonly List<ReceivedEvent> _events = [];
     private readonly SemaphoreSlim _signal = new(0, int.MaxValue);
+    private TaskCompletionSource _next = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private SocketIOClient.SocketIO? _socket;
     private long _seq;
 
@@ -107,12 +108,32 @@ public sealed class UserSession : IAsyncDisposable
             }
         }
 
+        TaskCompletionSource arrived;
         lock (_gate)
         {
             _events.Add(new ReceivedEvent(++_seq, DateTimeOffset.UtcNow, name, args));
+            arrived = _next;
+            _next = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         }
 
         _signal.Release();
+        arrived.TrySetResult();
+    }
+
+    /// <summary>
+    /// 次のイベントが届いたら完了するタスク。取り出した後に届いたイベントで完了する（取り出す前に届いたものでは完了しない）。
+    /// ボットは、受け取ったイベントを調べる前にこれを取っておき、何もなければ待つ（一定時間ごとに見に行くと、その分だけ返答が遅れる）。
+    /// _signal（WaitForAsync が数を消費する）とは別にしてあり、待つ人どうしで知らせを取り合わない。
+    /// </summary>
+    public Task NextEvent
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _next.Task;
+            }
+        }
     }
 
     /// <summary>イベントを送る。ack が true なら確認応答を待って、その値を返す。</summary>
