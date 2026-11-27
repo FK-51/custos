@@ -391,6 +391,10 @@ public sealed class CanaryRunner
                 await _lab.TestApiAsync("POST", "/__verify/faults", new JsonObject { ["disable_all"] = true }, cancellationToken).ConfigureAwait(false);
                 var set = await _lab.TestApiAsync("POST", "/__verify/faults", new JsonObject { ["enable"] = new JsonArray(name) }, cancellationToken).ConfigureAwait(false);
                 applied = (set["faults"] as JsonArray ?? []).OfType<JsonObject>().Any(f => f["name"]?.ToString() == name && f["enabled"]?.GetValue<bool>() == true && f["loaded"]?.GetValue<bool>() != false);
+
+                // 局面の検査などがリセット（アプリの再起動）をはさんでも、異常を有効にし直し、通った回数を足し合わせる
+                _lab.StickyFaults.Add(name);
+                _lab.StickyFaultHits.Remove(name);
             }
             else
             {
@@ -451,6 +455,7 @@ public sealed class CanaryRunner
             {
                 if (method == "test_api")
                 {
+                    _lab.StickyFaults.Remove(name);
                     await _lab.TestApiAsync("POST", "/__verify/faults", new JsonObject { ["disable_all"] = true }, cancellationToken).ConfigureAwait(false);
                 }
                 else
@@ -505,7 +510,7 @@ public sealed class CanaryRunner
     {
         var faults = await _lab.TestApiAsync("GET", "/__verify/faults", null, cancellationToken).ConfigureAwait(false);
         var fault = (faults["faults"] as JsonArray ?? []).OfType<JsonObject>().FirstOrDefault(f => f["name"]?.ToString() == name);
-        return fault?["hits"] is JsonValue v && v.TryGetValue<int>(out var hits) ? hits : null;
+        return fault?["hits"] is JsonValue v && v.TryGetValue<int>(out var hits) ? hits + _lab.StickyFaultHits.GetValueOrDefault(name) : null;
     }
 
     private string HistoryPath() => Path.Combine(_lab.Workspace.DataDir, "calibration", "canaries.jsonl");

@@ -42,6 +42,15 @@ public sealed class Lab : IAsyncDisposable
     private readonly Action<string> _log;
     private readonly Dictionary<string, AgentSession> _sessions = new(StringComparer.Ordinal);
     private readonly SemaphoreSlim _sessionLock = new(1, 1);
+
+    /// <summary>
+    /// リセットの後も有効にし直す異常の名前（テスト用APIの faults。カナリアの間だけ使う）。リセットはアプリを再起動するので、
+    /// 有効にした異常はメモリから消える。以前は、局面の検査（局面ごとにリセットする）の間、カナリアの異常が一度も効いていなかった。
+    /// </summary>
+    public HashSet<string> StickyFaults { get; } = new(StringComparer.Ordinal);
+
+    /// <summary>リセットで消えた分の、異常の箇所を通った回数（StickyFaults の hits の累計）。</summary>
+    public Dictionary<string, int> StickyFaultHits { get; } = new(StringComparer.Ordinal);
     private static readonly string DockerStateKey = "State";
     private LabState? _state;
 
@@ -449,6 +458,7 @@ public sealed class Lab : IAsyncDisposable
         var snapshot = LoadSnapshot(name);
         var stopwatch = Stopwatch.StartNew();
         _log($"リセットします（{name}）");
+        await KeepStickyFaultHitsAsync(cancellationToken).ConfigureAwait(false);
         await ClearUserSideAsync(cancellationToken).ConfigureAwait(false);
         await _docker.RunCheckedAsync(["compose", "-f", State.ComposeFile, "-p", Project, "stop", "--timeout", "5", "app"], "アプリの停止", TimeSpan.FromMinutes(2), cancellationToken).ConfigureAwait(false);
         await DropConnectionsAsync().ConfigureAwait(false);
@@ -460,6 +470,11 @@ public sealed class Lab : IAsyncDisposable
 
         await _docker.RunCheckedAsync(["compose", "-f", State.ComposeFile, "-p", Project, "start", "app"], "アプリの起動", TimeSpan.FromMinutes(2), cancellationToken).ConfigureAwait(false);
         await WaitHealthyAsync(TimeSpan.FromMinutes(3), cancellationToken).ConfigureAwait(false);
+        if (StickyFaults.Count > 0)
+        {
+            await TestApiAsync("POST", "/__verify/faults", new JsonObject { ["enable"] = new JsonArray(StickyFaults.Select(f => (JsonNode?)JsonValue.Create(f)).ToArray()) }, cancellationToken).ConfigureAwait(false);
+        }
+
         await SettleAsync(TimeSpan.FromMilliseconds(800), TimeSpan.FromSeconds(30), cancellationToken).ConfigureAwait(false);
         var hash = await ops.CallObjectAsync("db.hash", new JsonObject { ["db"] = DbPathInOps }, TimeSpan.FromMinutes(1), cancellationToken).ConfigureAwait(false);
         var content = hash["content"] as JsonObject ?? [];
@@ -488,6 +503,24 @@ public sealed class Lab : IAsyncDisposable
             ["tables"] = hash["tables"]?.DeepClone(),
             ["seconds"] = Math.Round(stopwatch.Elapsed.TotalSeconds, 2),
         };
+    }
+
+    /// <summary>再起動で消える前に、StickyFaults の hits を累計に足す。</summary>
+    private async Task KeepStickyFaultHitsAsync(CancellationToken cancellationToken)
+    {
+        if (StickyFaults.Count == 0)
+        {
+            return;
+        }
+
+        var faults = await TestApiAsync("GET", "/__verify/faults", null, cancellationToken).ConfigureAwait(false);
+        foreach (var fault in (faults["faults"] as JsonArray ?? []).OfType<JsonObject>())
+        {
+            if (fault["name"]?.ToString() is { } faultName && StickyFaults.Contains(faultName) && fault["hits"] is JsonValue v && v.TryGetValue<int>(out var hits))
+            {
+                StickyFaultHits[faultName] = StickyFaultHits.GetValueOrDefault(faultName) + hits;
+            }
+        }
     }
 
     /// <summary>プロキシに、いまの接続をすべて切らせる。</summary>
