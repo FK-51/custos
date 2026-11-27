@@ -400,21 +400,23 @@ public sealed class CanaryRunner
             string detail;
             int? hits = null;
             var played = 0;
+            var startSeq = _lab.Records.Activity().LastSeq;
             try
             {
-                // 異常の箇所を通らなかったら（例：効果の誤りを仕込んだカードが一度も出なかった）、シードを変えて回し直す。
-                // 通ったかどうかは、テスト用APIの hits（異常の定義が fault.hit() を呼ぶもの）で見る
+                // 異常の箇所を通らなかったら（例：効果の誤りを仕込んだカードが一度も出なかった、500 を返す対象の通信がなかった）、
+                // シードを変えて回し直す。通ったかどうかは、テスト用APIの hits（異常の定義が fault.hit() を呼ぶもの）か、
+                // プロキシが注入した記録（injected にカナリアの名前）の数で見る
                 for (var attempt = 0; attempt < MaxGames; attempt++)
                 {
                     var (games, gameFindings, _) = await new Probes.BotPlayRunner(_lab, _run, _log).RunAsync(1, seed + attempt, false, cancellationToken).ConfigureAwait(false);
                     played += games.Count;
                     findings.AddRange(gameFindings.Where(f => f.Category != "coverage"));
-                    if (findings.Count > 0 || method != "test_api" || name == "accept-any-choice")
+                    if (findings.Count > 0 || name == "accept-any-choice")
                     {
                         break;
                     }
 
-                    hits = await FaultHitsAsync(name, cancellationToken).ConfigureAwait(false);
+                    hits = await ExercisedCountAsync(name, method, startSeq, cancellationToken).ConfigureAwait(false);
                     if (hits != 0)
                     {
                         break;
@@ -428,10 +430,7 @@ public sealed class CanaryRunner
                     findings = [.. findings, .. (await new Probes.PhaseProber(_lab, _run, _log).RunAsync(cancellationToken).ConfigureAwait(false)).Where(f => f.Rule == "unoffered_choice_accepted")];
                 }
 
-                if (method == "test_api")
-                {
-                    hits = await FaultHitsAsync(name, cancellationToken).ConfigureAwait(false);
-                }
+                hits = await ExercisedCountAsync(name, method, startSeq, cancellationToken).ConfigureAwait(false);
 
                 var through = hits is { } h ? $"、異常の箇所を {h} 回通った" : string.Empty;
                 detail = findings.Count > 0 && hits == 0
@@ -490,6 +489,12 @@ public sealed class CanaryRunner
         var all = File.ReadAllLines(historyPath).Where(l => l.Trim().Length > 0).Select(l => JsonNode.Parse(l)).OfType<JsonNode>().Where(Counts).ToList();
         return all.Count == 0 ? null : (double)all.Count(n => n["detected"]?.GetValue<bool>() == true) / all.Count;
     }
+
+    /// <summary>異常の箇所を通った回数。テスト用APIは hits（定義が数えていなければ null）、プロキシは注入した記録の数。</summary>
+    private async Task<int?> ExercisedCountAsync(string name, string method, long sinceSeq, CancellationToken cancellationToken) =>
+        method == "test_api"
+            ? await FaultHitsAsync(name, cancellationToken).ConfigureAwait(false)
+            : _lab.Records.Read(sinceSeq).Count(e => e.Injected == name);
 
     /// <summary>テスト用APIの hits（異常の箇所を通った回数）。定義が数えていなければ null。</summary>
     private async Task<int?> FaultHitsAsync(string name, CancellationToken cancellationToken)
