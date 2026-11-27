@@ -308,7 +308,9 @@ public static class PerfRunner
             Measurement? measurement = null;
             for (var attempt = 0; attempt < 3; attempt++)
             {
-                measurement = await MeasureAsync(lab, concurrency * 2, concurrency, 41 + concurrency + (attempt * 1000), cancellationToken).ConfigureAwait(false);
+                // 対局数は、同時数の2倍と、perf run の既定（10 対局）の大きい方。同時1〜4のときに2〜8対局（数十手）しかないと、
+                // 99パーセンタイルが最大値とほぼ同じになり、1回の再送（損失 0.5 % のプロファイル）で基準を超えて容量が決まってしまう
+                measurement = await MeasureAsync(lab, Math.Max(10, concurrency * 2), concurrency, 41 + concurrency + (attempt * 1000), cancellationToken).ConfigureAwait(false);
                 run.AppendJsonLine("perf/capacity.jsonl", measurement.ToJson());
                 if (measurement.State != MeasurementState.Invalid)
                 {
