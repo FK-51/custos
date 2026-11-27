@@ -3,9 +3,11 @@ using Custos.Cli.Commands;
 using Custos.Core.Util;
 
 // コマンド custos（指示書 付録A）。管理側のホストで動く。
+// 値を取らない指定（CliArgs.Flag で読むもの）。ここにない名前は、次の引数を値として読む
 var flags = new HashSet<string>(StringComparer.Ordinal)
 {
     "json", "rebuild", "overwrite", "egress", "all", "raw", "help", "sign", "all-breakage", "keep", "no-build", "strict", "dry-run",
+    "no-reset", "no-register", "register", "allow-used", "phases", "share",
 };
 var commands = CommandTable.Build();
 if (args.Length == 0 || args[0] is "help" or "--help" or "-h")

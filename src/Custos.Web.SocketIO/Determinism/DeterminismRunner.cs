@@ -48,6 +48,7 @@ public sealed record DeterminismResult(
 /// </summary>
 public sealed class DeterminismRunner
 {
+    private static int _invocations;
     private readonly Lab.Lab _lab;
     private readonly Run _run;
 
@@ -101,10 +102,13 @@ public sealed class DeterminismRunner
 
         var raw = states.Select(s => Hashing.Sha256Hex(Json.Canonical(ToNode(s)))[..16]).ToList();
         var normalizedStates = states.Select((s, i) => Normalize(s, determinism, orders[i])).ToList();
+
+        // 同じ実行の中で何度測っても（B-4 と B-5 など）、証拠のファイルがぶつからないようにする（結果は上書きしない決まり）
+        var prefix = "determinism/" + Interlocked.Increment(ref _invocations).ToString("D2", CultureInfo.InvariantCulture) + "-";
         for (var i = 0; i < normalizedStates.Count; i++)
         {
             // 証拠：正規化した後の状態（どのキーの値がどう違うかを後から確かめられるように）
-            _run.WriteJson($"determinism/run-{(i + 1).ToString(CultureInfo.InvariantCulture)}.json", new JsonObject { ["connection_order"] = new JsonArray(orders[i].Select(o => (JsonNode?)JsonValue.Create(o)).ToArray()), ["normalized"] = ToNode(normalizedStates[i]) });
+            _run.WriteJson($"{prefix}run-{(i + 1).ToString(CultureInfo.InvariantCulture)}.json", new JsonObject { ["connection_order"] = new JsonArray(orders[i].Select(o => (JsonNode?)JsonValue.Create(o)).ToArray()), ["normalized"] = ToNode(normalizedStates[i]) });
         }
 
         var normalized = normalizedStates.Select(s => Hashing.Sha256Hex(Json.Canonical(ToNode(s)))[..16]).ToList();
@@ -191,6 +195,10 @@ public sealed class DeterminismRunner
             return mapped;
         }
 
+        // 接続の順から分かった ID（と、すでに番号を振った値）は、見た目に関係なく ID として扱う。
+        // socket.id は数字を1文字も含まないことがあり（16 文字の乱数の部分で約 7%）、LooksLikeId だけでは取りこぼす
+        bool IsId(string text) => ids.ContainsKey(text) || LooksLikeId(text);
+
         foreach (var pair in state)
         {
             if (config.Volatile.Contains(pair.Key, StringComparer.Ordinal))
@@ -203,7 +211,7 @@ public sealed class DeterminismRunner
             {
                 var entity = row[0]?.GetValue<string>() ?? string.Empty;
                 var value = row[1]?.DeepClone();
-                if (value is JsonValue v && v.TryGetValue<string>(out var text) && LooksLikeId(text))
+                if (value is JsonValue v && v.TryGetValue<string>(out var text) && IsId(text))
                 {
                     value = JsonValue.Create(Id(text));
                 }
@@ -213,7 +221,7 @@ public sealed class DeterminismRunner
                     value = new JsonArray(array.Select(n => n?.DeepClone()).OrderBy(n => n?.ToJsonString(), StringComparer.Ordinal).ToArray());
                 }
 
-                rows.Add(new JsonArray(JsonValue.Create(LooksLikeId(entity) ? Id(entity) : entity), value));
+                rows.Add(new JsonArray(JsonValue.Create(IsId(entity) ? Id(entity) : entity), value));
             }
 
             result[pair.Key] = new JsonArray(rows.OrderBy(r => r.ToJsonString(), StringComparer.Ordinal).Select(r => (JsonNode?)r).ToArray());

@@ -88,8 +88,16 @@ public sealed class CliArgs
         return _options.TryGetValue(name, out var values) ? values : [];
     }
 
-    /// <summary>真偽の指定。</summary>
-    public bool Flag(string name) => Get(name) is "true" or "1" or "yes";
+    /// <summary>
+    /// 真偽の指定。真偽以外の値は誤りとして止める（フラグの一覧に入っていない名前は、次の引数を値として飲み込むため。
+    /// 例：--no-reset --no-register で、--no-reset の値が「--no-register」になり、黙って偽として扱われていた）。
+    /// </summary>
+    public bool Flag(string name) => Get(name) switch
+    {
+        null or "false" or "0" or "no" => false,
+        "true" or "1" or "yes" => true,
+        var other => throw new CustosException($"--{name} は値を取りません（「{other}」が値として読まれました。--{name}=true の形でも指定できます）"),
+    };
 
     /// <summary>整数の値。</summary>
     public long Number(string name, long fallback)

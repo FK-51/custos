@@ -183,7 +183,11 @@ public sealed class InvariantJudge : IJudge
         var findings = new List<Finding>();
         var needRecords = invariants.Any(i => i.Kind is InvariantKind.SentSql or InvariantKind.CrossSql);
         var needApp = invariants.Any(i => i.Kind is InvariantKind.Sql or InvariantKind.CrossSql);
-        using var database = needRecords || needApp ? await RecordsDatabase.BuildAsync(context.Lab, 0, needApp, cancellationToken).ConfigureAwait(false) : null;
+
+        // 通信の記録は、ほかの判定器と同じく、判定を始めた時点（baseline）より後のものだけを見る。
+        // 0 から読むと、同じ検証環境で前に起きた違反（前のカナリアや校正用バグの分）が、後の判定にも数えられてしまう。
+        // custos judge は --since がなければ RecordsSeq = 0（起動からの全部）を渡すので、その使い方は変わらない
+        using var database = needRecords || needApp ? await RecordsDatabase.BuildAsync(context.Lab, context.Baseline.RecordsSeq, needApp, cancellationToken).ConfigureAwait(false) : null;
         var results = new JsonArray();
         foreach (var invariant in invariants)
         {

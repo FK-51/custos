@@ -8,6 +8,7 @@
 // 読み込みの時点で関数を取り出して持っている書き方には効かない（README の制約）。
 
 const crypto = require('crypto');
+const Module = require('module');
 const { createPrng } = require('./prng');
 
 class SeedControl {
@@ -16,10 +17,51 @@ class SeedControl {
     this.prng = null;
     this.originals = null;
     this.patched = [];
+    this.pooled = new WeakSet();
+    this.hooked = false;
   }
 
   get installed() {
     return this.prng !== null;
+  }
+
+  /**
+   * 乱数をためておく部品を包む（アプリのモジュールより前に呼ぶ。テスト用APIは preload で動くので間に合う）。
+   *
+   * base64id（engine.io の接続の ID と socket.io の socket.id を作る）は、crypto.randomBytes でまとめて作った乱数を
+   * ためておき、そこから ID を作る。起動時にためた分は、後からシードを入れても変わらない。
+   * socket.id はアプリの振る舞いに効くことがある（例：利用者の ID に使い、その並びで席の順番が決まる）ので、
+   * シードを入れている間は、ためた乱数を使わず、シードつきの crypto.randomBytes から作る（設計書 第22.2節「乱数、UUID」）。
+   *
+   * base64id は、パッケージ（socket.io、古い engine.io が require('base64id') で使う）と、
+   * 新しい engine.io が同梱した写し（build/contrib/base64id.js。exports.base64id）の両方を包む。
+   * ID の後ろ4文字は base64id のプロセスの中の通し番号で、シードを入れ直しても戻さない
+   * （戻すと、残っている古い接続と ID が重なりうる）。シードで決まるのは前の 16 文字（乱数の部分）。
+   */
+  hookPooledSources() {
+    if (this.hooked) return;
+    this.hooked = true;
+    const self = this;
+    const originalLoad = Module._load;
+    Module._load = function load(request) {
+      const exports = originalLoad.apply(this, arguments);
+      if (typeof request === 'string' && request.includes('base64id') && exports) {
+        self._wrapBase64id(typeof exports.getRandomBytes === 'function' ? exports : exports.base64id);
+      }
+      return exports;
+    };
+  }
+
+  _wrapBase64id(instance) {
+    if (!instance || typeof instance !== 'object' || typeof instance.getRandomBytes !== 'function' || this.pooled.has(instance)) return;
+    const self = this;
+    const original = instance.getRandomBytes;
+    instance.getRandomBytes = function getRandomBytes(bytes) {
+      // シードを入れている間は crypto.randomBytes（シードつきに置き換え済み）を、その場で呼ぶ
+      if (self.prng) return crypto.randomBytes(bytes || 12);
+      return original.apply(this, arguments);
+    };
+    this.pooled.add(instance);
   }
 
   install(seed) {

@@ -163,11 +163,6 @@ public static class Bot
                     };
                     var item = choices[index];
                     var value = item is JsonObject obj && protocol.ObjectChoiceField != null ? obj[protocol.ObjectChoiceField]?.DeepClone() : item?.DeepClone();
-                    if (think > TimeSpan.Zero)
-                    {
-                        await Task.Delay(think, cancellationToken).ConfigureAwait(false);
-                    }
-
                     var replyValue = BotProtocol.Fill(protocol.ReplyTemplate, value, session.Memory);
                     await session.EmitAsync(protocol.ReplyEvent, [replyValue], false, TimeSpan.FromSeconds(5), cancellationToken).ConfigureAwait(false);
                     moves++;
@@ -184,6 +179,14 @@ public static class Bot
                     {
                         stopReason = "max_moves";
                         goto Done;
+                    }
+
+                    // 直列に送る（think）：返答の後に待ち、その返答へのサーバーの反応（次の選択の要求など）が届いてから次の要求を見る。
+                    // 返答の前に待つと、返答の直後にほかの利用者の要求を見ることになり、反応が届いたかどうかで答える順序がぶれる
+                    // （決定性の測定。設計書 第22.2節「並行の操作の順序はぶれの原因」）
+                    if (think > TimeSpan.Zero)
+                    {
+                        await Task.Delay(think, cancellationToken).ConfigureAwait(false);
                     }
                 }
             }

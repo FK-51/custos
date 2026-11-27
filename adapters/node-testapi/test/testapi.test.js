@@ -236,6 +236,34 @@ test('同じシードなら同じ乱数になり、null で元に戻る', async 
   }
 });
 
+test('シードを入れている間は socket.id と接続の ID もシードで決まり、null で元に戻る', async () => {
+  const t = await startTarget();
+  const ids = async () => {
+    const first = await t.connect();
+    const second = await t.connect();
+    const result = [first.id, first.io.engine.id, second.id, second.io.engine.id];
+    first.close();
+    second.close();
+    return result;
+  };
+  // ID の前の 16 文字が乱数の部分。後ろ4文字は base64id のプロセスの中の通し番号（シードを入れ直しても戻さない）
+  const randomParts = (list) => list.map((id) => id.slice(0, 16));
+  try {
+    // 起動時にためた乱数（base64id）に関係なく、同じシードなら乱数の部分が同じになる（engine.io の同梱の写しも含む）
+    await t.api('POST', '/__verify/seed', { seed: 'ids' });
+    const seeded = await ids();
+    await t.api('POST', '/__verify/seed', { seed: 'ids' });
+    const again = await ids();
+    assert.deepEqual(randomParts(again), randomParts(seeded));
+    assert.equal(new Set([...seeded, ...again]).size, seeded.length + again.length, 'ID そのものは重ならない');
+
+    await t.api('POST', '/__verify/seed', { seed: null });
+    assert.notDeepEqual(randomParts(await ids()), randomParts(seeded));
+  } finally {
+    await t.stop();
+  }
+});
+
 test('時計を進めるとアプリの長いタイマーが発火し、接続は切れない', async () => {
   const t = await startTarget();
   const socket = await t.connect();

@@ -115,7 +115,8 @@ ENV NODE_OPTIONS="--require /opt/verify-testapi/index.js" \
 
 - `crypto.getRandomValues`（Node 20 では再定義できないゲッター）は置き換えないが、中で `webcrypto.getRandomValues` を呼ぶので固定される。
 - 効くのは、呼び出しのたびに `crypto.xxx` を引く書き方（TypeScript の `import crypto from 'crypto'` のコンパイル結果など）。読み込みの時点で関数を取り出して持っている書き方には効かない。
-- engine.io の接続の ID も `crypto.randomBytes` から作られるので、シードを入れた後の接続の ID も固定される。
+- engine.io の接続の ID と socket.io の `socket.id` も固定される。この2つは base64id が `crypto.randomBytes` でまとめて作ってためておいた乱数から作られ、起動時にためた分は後からシードを入れても変わらない。そこでテスト用APIは、読み込まれた base64id（パッケージと、新しい engine.io が同梱した写しの両方）を包み、シードを入れている間はためた乱数を使わず、シードつきの `crypto.randomBytes` から ID を作る（`{"seed": null}` で元に戻る）。socket.id を利用者の ID に使うアプリでは、これがないと席の順番などが実行のたびに変わる。
+  - シードで決まるのは ID の前の 16 文字（乱数の部分）。後ろ4文字は base64id のプロセスの中の通し番号で、シードを入れ直しても戻さない（戻すと、残っている古い接続と ID が重なりうる）。ID の並び順は前の 16 文字で決まる。
 
 ### `POST /__verify/reset`
 

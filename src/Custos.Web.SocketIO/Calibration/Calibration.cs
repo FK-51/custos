@@ -401,8 +401,10 @@ public sealed class CanaryRunner
             await File.AppendAllTextAsync(history, Json.SerializeCompact(new { name, method, applied = result.Applied, detected = result.Detected, at = DateTimeOffset.UtcNow }) + "\n", cancellationToken).ConfigureAwait(false);
         }
 
-        // 効いた（異常が実際に有効になった）カナリアだけで数える
-        var all = File.ReadAllLines(history).Select(l => JsonNode.Parse(l)).OfType<JsonNode>().Where(n => n["applied"]?.GetValue<bool>() != false).ToList();
+        // 効いた（異常が実際に有効になった）カナリアだけで数える。
+        // excluded は、後からフレームワークの誤りが分かり、検出の判定が当てにならない試行（note に理由）。数えない
+        var all = File.ReadAllLines(history).Select(l => JsonNode.Parse(l)).OfType<JsonNode>()
+            .Where(n => n["applied"]?.GetValue<bool>() != false && n["excluded"]?.GetValue<bool>() != true).ToList();
         var rate = all.Count == 0 ? 0 : (double)all.Count(n => n["detected"]?.GetValue<bool>() == true) / all.Count;
         _run.WriteJson("canaries.json", results);
         return (results, rate);

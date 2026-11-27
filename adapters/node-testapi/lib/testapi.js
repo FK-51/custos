@@ -70,6 +70,8 @@ function start(env = process.env) {
   if (options.faultsModule) faults.load(options.faultsModule);
 
   const seed = new SeedControl();
+  // engine.io・socket.io が ID の乱数をためておく base64id を、読み込まれる前に包む（シードを入れている間の ID を固定するため）
+  seed.hookPooledSources();
   if (options.initialSeed !== undefined && options.initialSeed !== '') seed.install(options.initialSeed);
 
   const clock = new Clock({ activity, real, realTimerCallers: options.realTimerCallers });

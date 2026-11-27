@@ -7,11 +7,11 @@ namespace Custos.Core.Util;
 /// </summary>
 public static class FrameworkInfo
 {
-    /// <summary>フレームワークの版（Directory.Build.props の Version）。</summary>
-    public static string Version { get; } =
+    /// <summary>フレームワークの版（Directory.Build.props の Version）。ビルドの付記（+ の後ろ）は含めない。</summary>
+    public static string Version { get; } = WithoutBuildMetadata(
         typeof(FrameworkInfo).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion
         ?? typeof(FrameworkInfo).Assembly.GetName().Version?.ToString()
-        ?? "0.0.0";
+        ?? "0.0.0");
 
     /// <summary>プロトコル（アダプタとの約束事）の版。</summary>
     public const string ProtocolVersion = "0.1";
@@ -21,6 +21,18 @@ public static class FrameworkInfo
     /// 判定器のコードが1バイトでも変われば値が変わる。
     /// </summary>
     public static string JudgeHash { get; } = ComputeJudgeHash();
+
+    /// <summary>
+    /// 版からビルドの付記（SemVer の + の後ろ）を除く。
+    /// .NET SDK は、コミットのある git のリポジトリでビルドすると InformationalVersion に「+コミットのハッシュ」を付ける。
+    /// 付記が残ると、Docker のタグに使えない文字（+）が入り、結果や登録簿に記録する版の値もコミットごとに変わってしまう。
+    /// </summary>
+    public static string WithoutBuildMetadata(string version)
+    {
+        ArgumentNullException.ThrowIfNull(version);
+        var plus = version.IndexOf('+', StringComparison.Ordinal);
+        return plus < 0 ? version : version[..plus];
+    }
 
     private static string ComputeJudgeHash()
     {
