@@ -143,17 +143,21 @@ public static class CalibrationCommands
         var run = context.Results.Begin("canary", context.Config.Hash, context.Config.FileHashes);
         var (results, rate) = await new CanaryRunner(context.Lab, run, CliContext.Log).RunAsync((int)args.Number("count", 3), (int)args.Number("seed", DateTime.UtcNow.DayOfYear), cancellationToken).ConfigureAwait(false);
         var text = new StringBuilder();
-        text.AppendLine("| カナリア | 方法 | 効いた | 見つかった | 詳細 |");
-        text.AppendLine("|---|---|---|---|---|");
+        text.AppendLine("| カナリア | 方法 | 効いた | 異常の箇所を通った | 見つかった | 詳細 |");
+        text.AppendLine("|---|---|---|---|---|---|");
         foreach (var r in results)
         {
-            text.AppendLine(CultureInfo.InvariantCulture, $"| {r.Name} | {r.Method} | {(r.Applied ? "はい" : "いいえ")} | {(r.Detected ? "はい" : "いいえ")} | {r.Detail.Replace("|", "\\|", StringComparison.Ordinal)} |");
+            var exercised = r.Exercised switch { true => "はい", false => "いいえ", null => "-" };
+            text.AppendLine(CultureInfo.InvariantCulture, $"| {r.Name} | {r.Method} | {(r.Applied ? "はい" : "いいえ")} | {exercised} | {(r.Detected ? "はい" : "いいえ")} | {r.Detail.Replace("|", "\\|", StringComparison.Ordinal)} |");
         }
 
+        // 異常の箇所を通らなかったもの（exercised=false）は、見逃しではないので数えない（累積の検出率も同じ）
+        var counted = results.Where(r => r.Exercised != false).ToList();
+        var skipped = results.Count - counted.Count;
         text.AppendLine();
-        text.AppendLine(CultureInfo.InvariantCulture, $"今回：{results.Count(r => r.Detected)}/{results.Count} 個を検出。累積の検出率：{rate:P0}（劣化の兆候として監視する。1回の結果から検出率は推定しない）");
+        text.AppendLine(CultureInfo.InvariantCulture, $"今回：{counted.Count(r => r.Detected)}/{counted.Count} 個を検出{(skipped > 0 ? $"（ほかに {skipped} 個は {CanaryRunner.MaxGames} 対局まで回しても異常の箇所を通らず、数えない）" : string.Empty)}。累積の検出率：{rate:P0}（劣化の兆候として監視する。1回の結果から検出率は推定しない）");
         run.WriteText("canary.md", text.ToString());
-        var allFound = results.All(r => r.Detected);
+        var allFound = counted.Count > 0 && counted.All(r => r.Detected);
         run.Seal(allFound ? "passed" : "failed");
         CliContext.Out(text.ToString());
         return allFound ? 0 : 1;
@@ -347,17 +351,10 @@ public static class CalibrationCommands
         _ => Severity.Low,
     };
 
-    private static double? ReadCanaryRate(Workspace workspace)
-    {
-        var path = Path.Combine(workspace.DataDir, "calibration", "canaries.jsonl");
-        if (!File.Exists(path))
-        {
-            return null;
-        }
-
-        var all = File.ReadAllLines(path).Select(l => JsonNode.Parse(l)).OfType<JsonNode>().Where(n => n["applied"]?.GetValue<bool>() != false).ToList();
-        return all.Count == 0 ? null : (double)all.Count(n => n["detected"]?.GetValue<bool>() == true) / all.Count;
-    }
+    // カナリアの表示と同じ数え方（excluded・exercised=false を数えない）。以前はここだけ applied しか見ておらず、
+    // 判定が当てにならないと印を付けた試行（excluded）まで数えていた
+    private static double? ReadCanaryRate(Workspace workspace) =>
+        CanaryRunner.CumulativeRate(Path.Combine(workspace.DataDir, "calibration", "canaries.jsonl"));
 
     private static string? FindReport(string resultsDir, string trialId)
     {

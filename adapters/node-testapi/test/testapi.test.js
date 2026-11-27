@@ -404,12 +404,23 @@ test('異常を切り替えると挙動が変わり、リセットは登録さ�
     const fault = list.json.faults.find((f) => f.name === 'compute-off-by-one');
     assert.equal(fault.loaded, true);
     assert.equal(fault.enabled, false);
+    assert.equal(fault.hits, 0);
     assert.equal(list.json.faults.find((f) => f.name === 'never-loaded').loaded, false);
+    // reportsHits のない定義は、通ったかどうか分からない
+    assert.equal(list.json.faults.find((f) => f.name === 'never-loaded').hits, null);
 
+    const hits = async () => (await t.api('GET', '/__verify/faults')).json.faults.find((f) => f.name === 'compute-off-by-one').hits;
     await t.api('POST', '/__verify/faults', { name: 'compute-off-by-one', enabled: true });
+    assert.equal(await hits(), 0); // 有効にしただけでは通っていない
     assert.equal((await t.app('/state')).compute, 21);
+    assert.equal(await hits(), 1);
+    await t.api('POST', '/__verify/faults', { enable: ['compute-off-by-one'] });
+    assert.equal(await hits(), 1); // 有効のまま重ねて送っても数は消えない
     await t.api('POST', '/__verify/faults', { disable: ['compute-off-by-one'] });
     assert.equal((await t.app('/state')).compute, 20);
+    assert.equal(await hits(), 1); // 無効の間は数えない
+    await t.api('POST', '/__verify/faults', { enable: ['compute-off-by-one'] });
+    assert.equal(await hits(), 0); // 無効から有効に変えると数え直す
     assert.equal((await t.api('POST', '/__verify/faults', { name: 'unknown' })).status, 400);
 
     const reset = await t.api('POST', '/__verify/reset', {});

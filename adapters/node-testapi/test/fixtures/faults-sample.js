@@ -7,10 +7,15 @@ module.exports = {
   faults: {
     'compute-off-by-one': {
       description: 'compute の結果が1つずれる',
+      reportsHits: true,
       patches: {
         'test/fixtures/target-module.js': (exports, fault) => {
           const original = exports.compute;
-          exports.compute = (x) => (fault.enabled() ? original(x) + 1 : original(x));
+          exports.compute = (x) => {
+            if (!fault.enabled()) return original(x);
+            fault.hit();
+            return original(x) + 1;
+          };
         },
       },
     },

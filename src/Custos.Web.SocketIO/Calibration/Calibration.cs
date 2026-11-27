@@ -303,8 +303,11 @@ public sealed class Calibrator
     }
 }
 
-/// <summary>カナリア1件の結果。</summary>
-public sealed record CanaryResult(string Name, string Method, bool Applied, bool Detected, string Detail);
+/// <summary>
+/// カナリア1件の結果。Exercised は、異常の箇所を実際に通ったか（テスト用APIの hits。分からなければ null）。
+/// 通らなかった試行は見逃しではないので、検出率に数えない。
+/// </summary>
+public sealed record CanaryResult(string Name, string Method, bool Applied, bool Detected, string Detail, bool? Exercised = null, int Games = 0);
 
 /// <summary>
 /// 毎ループのカナリア（第7.3節、第19.7節）。3〜5個を有効にし、すべて見つかるかを確かめる（死活監視）。
@@ -314,6 +317,9 @@ public sealed record CanaryResult(string Name, string Method, bool Applied, bool
 /// </summary>
 public sealed class CanaryRunner
 {
+    /// <summary>異常の箇所を通らなかったときに、シードを変えて回す対局の上限（1カナリアあたり）。</summary>
+    public const int MaxGames = 5;
+
     private readonly Lab.Lab _lab;
     private readonly Run _run;
     private readonly Action<string> _log;
@@ -366,16 +372,47 @@ public sealed class CanaryRunner
 
             List<Finding> findings = [];
             string detail;
+            int? hits = null;
+            var played = 0;
             try
             {
-                var (games, gameFindings, _) = await new Probes.BotPlayRunner(_lab, _run, _log).RunAsync(1, seed, false, cancellationToken).ConfigureAwait(false);
-                findings = gameFindings.Where(f => f.Category != "coverage").ToList();
+                // 異常の箇所を通らなかったら（例：効果の誤りを仕込んだカードが一度も出なかった）、シードを変えて回し直す。
+                // 通ったかどうかは、テスト用APIの hits（異常の定義が fault.hit() を呼ぶもの）で見る
+                for (var attempt = 0; attempt < MaxGames; attempt++)
+                {
+                    var (games, gameFindings, _) = await new Probes.BotPlayRunner(_lab, _run, _log).RunAsync(1, seed + attempt, false, cancellationToken).ConfigureAwait(false);
+                    played += games.Count;
+                    findings.AddRange(gameFindings.Where(f => f.Category != "coverage"));
+                    if (findings.Count > 0 || method != "test_api" || name == "accept-any-choice")
+                    {
+                        break;
+                    }
+
+                    hits = await FaultHitsAsync(name, cancellationToken).ConfigureAwait(false);
+                    if (hits != 0)
+                    {
+                        break;
+                    }
+
+                    _log($"異常の箇所を通らなかったので、シードを変えてもう1対局回します（{attempt + 1}/{MaxGames}）");
+                }
+
                 if (name == "accept-any-choice")
                 {
                     findings = [.. findings, .. (await new Probes.PhaseProber(_lab, _run, _log).RunAsync(cancellationToken).ConfigureAwait(false)).Where(f => f.Rule == "unoffered_choice_accepted")];
                 }
 
-                detail = findings.Count > 0 ? findings[0].Summary : $"見つからなかった（{games.Count} 対局）";
+                if (method == "test_api")
+                {
+                    hits = await FaultHitsAsync(name, cancellationToken).ConfigureAwait(false);
+                }
+
+                var through = hits is { } h ? $"、異常の箇所を {h} 回通った" : string.Empty;
+                detail = findings.Count > 0 && hits == 0
+                    ? $"所見はあったが、異常の箇所を一度も通っていない（{played} 対局）ので、カナリアの検出ではない：{findings[0].Summary}"
+                    : findings.Count > 0
+                        ? findings[0].Summary
+                        : hits == 0 ? $"異常の箇所を通らなかった（{played} 対局）。見逃しとしては数えない" : $"見つからなかった（{played} 対局{through}）";
             }
             catch (CustosException e)
             {
@@ -395,19 +432,45 @@ public sealed class CanaryRunner
                 }
             }
 
-            var result = new CanaryResult(name, method, applied, applied && findings.Count > 0, detail);
+            bool? exercised = hits is { } hitCount ? hitCount > 0 : null;
+            var result = new CanaryResult(name, method, applied, applied && exercised != false && findings.Count > 0, detail, exercised, played);
             results.Add(result);
             Directory.CreateDirectory(Path.GetDirectoryName(history) ?? _lab.Workspace.DataDir);
-            await File.AppendAllTextAsync(history, Json.SerializeCompact(new { name, method, applied = result.Applied, detected = result.Detected, at = DateTimeOffset.UtcNow }) + "\n", cancellationToken).ConfigureAwait(false);
+            await File.AppendAllTextAsync(history, Json.SerializeCompact(new { name, method, applied = result.Applied, exercised, detected = result.Detected, games = played, at = DateTimeOffset.UtcNow }) + "\n", cancellationToken).ConfigureAwait(false);
         }
 
-        // 効いた（異常が実際に有効になった）カナリアだけで数える。
-        // excluded は、後からフレームワークの誤りが分かり、検出の判定が当てにならない試行（note に理由）。数えない
-        var all = File.ReadAllLines(history).Select(l => JsonNode.Parse(l)).OfType<JsonNode>()
-            .Where(n => n["applied"]?.GetValue<bool>() != false && n["excluded"]?.GetValue<bool>() != true).ToList();
-        var rate = all.Count == 0 ? 0 : (double)all.Count(n => n["detected"]?.GetValue<bool>() == true) / all.Count;
         _run.WriteJson("canaries.json", results);
-        return (results, rate);
+        return (results, CumulativeRate(history) ?? 0);
+    }
+
+    /// <summary>
+    /// 累積の検出率に数える試行か。数えないもの：異常が有効にならなかった（applied=false）、
+    /// 異常の箇所を通らなかった（exercised=false）、後からフレームワークの誤りが分かり判定が当てにならない（excluded=true。note に理由）。
+    /// </summary>
+    public static bool Counts(JsonNode entry)
+    {
+        ArgumentNullException.ThrowIfNull(entry);
+        return entry["applied"]?.GetValue<bool>() != false && entry["exercised"]?.GetValue<bool>() != false && entry["excluded"]?.GetValue<bool>() != true;
+    }
+
+    /// <summary>累積の検出率（data/calibration/canaries.jsonl）。数える試行がなければ null。カナリアの表示・成熟度・リリース判定で同じものを使う。</summary>
+    public static double? CumulativeRate(string historyPath)
+    {
+        if (!File.Exists(historyPath))
+        {
+            return null;
+        }
+
+        var all = File.ReadAllLines(historyPath).Where(l => l.Trim().Length > 0).Select(l => JsonNode.Parse(l)).OfType<JsonNode>().Where(Counts).ToList();
+        return all.Count == 0 ? null : (double)all.Count(n => n["detected"]?.GetValue<bool>() == true) / all.Count;
+    }
+
+    /// <summary>テスト用APIの hits（異常の箇所を通った回数）。定義が数えていなければ null。</summary>
+    private async Task<int?> FaultHitsAsync(string name, CancellationToken cancellationToken)
+    {
+        var faults = await _lab.TestApiAsync("GET", "/__verify/faults", null, cancellationToken).ConfigureAwait(false);
+        var fault = (faults["faults"] as JsonArray ?? []).OfType<JsonObject>().FirstOrDefault(f => f["name"]?.ToString() == name);
+        return fault?["hits"] is JsonValue v && v.TryGetValue<int>(out var hits) ? hits : null;
     }
 
     private string HistoryPath() => Path.Combine(_lab.Workspace.DataDir, "calibration", "canaries.jsonl");

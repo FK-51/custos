@@ -149,6 +149,26 @@ module.exports = {
 };
 ```
 
+一覧の各要素は `{"name","description","enabled","loaded","hits","targets"}`。`loaded` は差し替えの対象のモジュールが読み込まれたか。`hits` は、定義に `reportsHits: true` があるときだけ数で、有効にしてから `fault.hit()` が呼ばれた回数（異常な振る舞いが実際に起きた回数。無効から有効に変えると 0 に戻る）。`reportsHits` のない定義は `null`（通ったかどうか分からない）。カナリアは `hits` が 0 の試行を、見逃しではなく「異常の箇所を通らなかった」として数えない。
+
+```js
+'card7-draws-two': {
+  reportsHits: true,
+  patches: {
+    'packages/server/dist/domain/state/applyChange.js': (exports, fault) => {
+      const original = exports.applyChange;
+      exports.applyChange = function (state, change) {
+        if (fault.enabled() && change.type === 'SET_PLAYER_GET' && change.get === 3) {
+          fault.hit(); // 異常な振る舞いが起きた
+          change = { ...change, get: 2 };
+        }
+        return original.call(this, state, change);
+      };
+    },
+  },
+},
+```
+
 差し替えは require のフックで、対象のモジュールが読み込まれたときに一度だけ行う。有効かどうかは呼び出しのたびに `fault.enabled()` で見るので、実行中に切り替えられる。TypeScript のコンパイル結果のように、別のモジュールから `module_1.fn(...)` で呼ぶ関数に効く（同じモジュールの中の直接の呼び出しには効かない）。校正用のバグはパッチで仕込む（第19.4節）。ここは適合テストの陽性確認（D）のように、切り替えが要る場面に限って使う。
 
 ## テスト

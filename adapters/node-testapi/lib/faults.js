@@ -23,6 +23,11 @@
 //     reset() { /* POST /__verify/reset で呼ばれる */ },
 //   };
 //
+// 異常な振る舞いが実際に起きたときに fault.hit() を呼び、定義に reportsHits: true を書くと、
+// 一覧の hits（有効にしてから起きた回数）で「異常の箇所を通ったか」が分かる。
+// カナリアは、通らなかった試行（例：効果の誤りを仕込んだカードが一度も出なかった対局）を「見逃し」と区別する。
+// reportsHits のない定義の hits は null（分からない）。
+//
 // 差し替えは require のフックで、対象のモジュールが読み込まれたときに一度だけ行う。
 // 有効かどうかは呼び出しのたびに fault.enabled() で見るので、実行中に切り替えられる。
 // 校正用のバグはパッチで仕込む（設計書 第19.4節）。ここは適合テストの陽性確認のように、切り替えが要る場面に限る。
@@ -31,8 +36,9 @@ const Module = require('module');
 
 class FaultRegistry {
   constructor() {
-    this.definitions = new Map(); // name -> { description, patches: [{ match, apply }] }
+    this.definitions = new Map(); // name -> { description, reportsHits, patches: [{ match, apply }] }
     this.enabled = new Set();
+    this.hits = new Map(); // name -> 有効にしてから異常な振る舞いが起きた回数
     this.applied = new Map(); // name -> Set<filename>
     this.resetHooks = [];
     this.modulePath = null;
@@ -56,8 +62,9 @@ class FaultRegistry {
         if (typeof apply !== 'function') continue;
         patches.push({ match, apply });
       }
-      this.definitions.set(name, { description: (def && def.description) || '', patches });
+      this.definitions.set(name, { description: (def && def.description) || '', reportsHits: Boolean(def && def.reportsHits), patches });
       this.applied.set(name, new Set());
+      this.hits.set(name, 0);
     }
     if (mod && typeof mod.reset === 'function') this.resetHooks.push(mod.reset);
     this._installHook();
@@ -94,7 +101,14 @@ class FaultRegistry {
       for (const [name, def] of registry.definitions) {
         for (const patch of def.patches) {
           if (!registry._matches(patch.match, filename)) continue;
-          const api = { name, enabled: () => registry.enabled.has(name) };
+          const api = {
+            name,
+            enabled: () => registry.enabled.has(name),
+            // 異常な振る舞いが実際に起きた（有効なときだけ数える）
+            hit: () => {
+              if (registry.enabled.has(name)) registry.hits.set(name, (registry.hits.get(name) || 0) + 1);
+            },
+          };
           const result = patch.apply(replaced, api);
           if (result !== undefined) replaced = result;
           registry.applied.get(name).add(filename);
@@ -115,14 +129,18 @@ class FaultRegistry {
       description: def.description,
       enabled: this.enabled.has(name),
       loaded: (this.applied.get(name) || new Set()).size > 0,
+      hits: def.reportsHits ? this.hits.get(name) || 0 : null,
       targets: def.patches.map((p) => p.match),
     }));
   }
 
   set(name, on) {
     if (!this.definitions.has(name)) throw new Error(`unknown fault: ${name}`);
-    if (on) this.enabled.add(name);
-    else this.enabled.delete(name);
+    if (on) {
+      // 数え直すのは、無効から有効に変えたときだけ（有効のまま重ねて送っても数は消さない）
+      if (!this.enabled.has(name)) this.hits.set(name, 0);
+      this.enabled.add(name);
+    } else this.enabled.delete(name);
   }
 
   onReset(fn) {
