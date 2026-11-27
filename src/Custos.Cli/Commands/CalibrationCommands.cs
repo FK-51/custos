@@ -292,7 +292,12 @@ public static class CalibrationCommands
         }
 
         var registry = BugRegistry.OpenAdmin(RegistryPaths.From(context.Workspace).RegistryDb);
-        var open = registry.List().Where(b => b.FixedIn == null).ToList();
+
+        // 重複（link の duplicate_of）は元のバグで代表させて数えない（第20.7節）。以前は、機械判定が同じ不具合を
+        // 別の記録として見つけた分（例：BUG-0024 は BUG-0004 の重複）まで、未解決として二重に数えていた
+        var open = registry.List()
+            .Where(b => b.FixedIn == null && !registry.Links(b.Id).Any(l => l.Kind == "duplicate_of"))
+            .ToList();
         var findings = open.GroupBy(b => (Severity: ParseSeverity(b.Severity), Security: b.Category is "hidden_info" or "seat_hijack" or "xss" or "sqli" or "server_intrusion" or "secret"))
             .Select(g => new OpenFindings(g.Key.Severity, g.Key.Security, g.Count())).ToList();
         var canaryRate = ReadCanaryRate(context.Workspace);
