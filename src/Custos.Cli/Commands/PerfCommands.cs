@@ -19,7 +19,7 @@ public static class PerfCommands
         await EnsureProfileAsync(context, args.Get("profile"), cancellationToken).ConfigureAwait(false);
         var run = context.Results.Begin("perf", context.Config.Hash, context.Config.FileHashes, new Dictionary<string, string>(StringComparer.Ordinal) { ["app_image"] = context.Lab.State.AppImage, ["profile"] = context.Lab.State.Profile ?? "none" });
         var runs = (int)args.Number("runs", 5);
-        var (valid, all, environmentProblem) = await PerfRunner.SeriesAsync(context.Lab, runs, (int)args.Number("games", 10), (int)args.Number("concurrency", 5), (int)args.Number("seed", 1), run, "series", cancellationToken).ConfigureAwait(false);
+        var (valid, all, environmentProblem) = await PerfRunner.SeriesAsync(context.Lab, runs, (int)args.Number("games", 20), (int)args.Number("concurrency", 5), (int)args.Number("seed", 1), run, "series", cancellationToken).ConfigureAwait(false);
         var p99 = valid.Select(v => v.P99Ms).ToList();
         var summary = new JsonObject
         {

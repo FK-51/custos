@@ -82,10 +82,47 @@ public sealed class ImageBuilder
             }
 
             images[name] = tag;
+            await RemoveImagesAsync(_docker, "custos.component=" + name, tag, cancellationToken).ConfigureAwait(false);
         }
 
         return images;
     }
+
+    /// <summary>
+    /// ラベルが一致するイメージのうち、keep 以外を消す。コードを変えるたびに部品のイメージ（1個あたり 0.3〜4GB）が増え続けて、
+    /// ディスクがいっぱいになっていた（Mac の colima で実際に満杯になった）。使っているコンテナがあるイメージは Docker が消させないので残る。
+    /// 返り値は消した数。
+    /// </summary>
+    public static async Task<int> RemoveImagesAsync(DockerCli docker, string label, string? keep, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(docker);
+        var list = await docker.RunAsync(["image", "ls", "--filter", "label=" + label, "--format", "{{.Repository}}:{{.Tag}}"], TimeSpan.FromSeconds(30), cancellationToken: cancellationToken).ConfigureAwait(false);
+        if (!list.Succeeded)
+        {
+            return 0;
+        }
+
+        var removed = 0;
+        foreach (var image in list.StandardOutput.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Distinct(StringComparer.Ordinal))
+        {
+            if (image == keep || image.EndsWith(":<none>", StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            var result = await docker.RunAsync(["image", "rm", image], TimeSpan.FromMinutes(2), cancellationToken: cancellationToken).ConfigureAwait(false);
+            if (result.Succeeded)
+            {
+                removed++;
+            }
+        }
+
+        return removed;
+    }
+
+    /// <summary>校正用ビルド（ラベル custos.deployable=false。パッチを当てた本番用とテスト用）を消す。校正と品質チェックの最後に呼ぶ。</summary>
+    public static Task<int> RemoveCalibrationImagesAsync(DockerCli docker, CancellationToken cancellationToken) =>
+        RemoveImagesAsync(docker, "custos.deployable=false", null, cancellationToken);
 
     /// <summary>サンドボックスの枠のイメージを作る。</summary>
     public async Task<string> BuildSandboxAsync(CancellationToken cancellationToken)

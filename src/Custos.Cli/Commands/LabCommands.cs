@@ -277,6 +277,22 @@ public static class LabCommands
         return Task.FromResult(0);
     }
 
+    /// <summary>custos results close --id &lt;ID,...&gt; --reason &lt;理由&gt;：running のまま残った実行に、理由を書いて aborted で封をする。</summary>
+    public static Task<int> ResultsCloseAsync(CliContext context, CliArgs args, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(args);
+        var ids = (args.Get("id") ?? throw new CustosException("--id（閉じる実行の ID。カンマ区切り）を指定してください")).Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var reason = args.Get("reason") ?? throw new CustosException("--reason（閉じる理由）を指定してください");
+        foreach (var id in ids)
+        {
+            var closed = context.Results.CloseStale(id, "aborted", reason);
+            CliContext.Out(closed ? $"{id} を aborted として封をしました" : $"{id} は running ではないので、何もしませんでした");
+        }
+
+        return Task.FromResult(0);
+    }
+
     /// <summary>custos results verify。</summary>
     public static Task<int> ResultsVerifyAsync(CliContext context, CliArgs args, CancellationToken cancellationToken)
     {

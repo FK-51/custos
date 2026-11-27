@@ -34,6 +34,7 @@ public static class CommandTable
         new("commit", "commit --type <feat|fix|refactor|test|chore> [--bug <ID>] -m <説明> [--repo <dir>] [--sign]", "種類を付けてコミットする", RegistryCommands.CommitAsync),
         new("results list", "results list", "結果の一覧", LabCommands.ResultsListAsync),
         new("results verify", "results verify", "結果の改ざんを検査する（連鎖とハッシュ）", LabCommands.ResultsVerifyAsync),
+        new("results close", "results close --id <ID,...> --reason <理由>", "running のまま残った実行（前のプロセスが封をせずに終わったもの）に、理由を書いて封をする", LabCommands.ResultsCloseAsync),
 
         // 段階1：機械判定
         new("judge", "judge [--scenario <ファイル>]", "汎用の判定と不変条件で、いまの状態を判定する", JudgeCommands.JudgeAsync),

@@ -51,6 +51,31 @@ public sealed class RunStoreSealTests : IDisposable
     }
 
     [Fact]
+    public void StaleRunCanBeClosedOnlyOnce()
+    {
+        // 前のプロセスが封をせずに終わった実行（running のまま）を、ファイルだけで再現する
+        var store = new RunStore(_dir);
+        const string id = "000099-calibrate";
+        var dir = Path.Combine(_dir, "runs", id);
+        Directory.CreateDirectory(dir);
+        File.WriteAllText(Path.Combine(dir, "run.json"), Custos.Core.Util.Json.Serialize(new RunMetadata(id, 99, "calibrate", DateTimeOffset.UtcNow.AddHours(-12), null, "running", "0.1.0", "judge", null, new Dictionary<string, string>(), new Dictionary<string, string>())));
+        File.WriteAllText(Path.Combine(dir, "partial.txt"), "途中まで");
+
+        Assert.True(store.CloseStale(id, "aborted", "ディスクが満杯になって中断した"));
+        var listed = store.List().Single(r => r.Id == id);
+        Assert.Equal("aborted", listed.Status);
+        Assert.Single(Directory.GetFiles(dir, "aborted-*.txt"));
+        Assert.False(store.CloseStale(id, "aborted", "もう一度"));
+        Assert.Throws<Custos.Core.Util.CustosException>(() => store.CloseStale("999999-none", "aborted", "ない"));
+        Assert.Empty(store.Verify());
+
+        // このプロセスで実行中のものは閉じない
+        var running = store.Begin("seeds-check", null, null);
+        Assert.Throws<Custos.Core.Util.CustosException>(() => store.CloseStale(running.Id, "aborted", "実行中"));
+        running.Seal("passed");
+    }
+
+    [Fact]
     public void FreeNameNumbersCollidingFiles()
     {
         var run = new RunStore(_dir).Begin("calibrate", null, null);

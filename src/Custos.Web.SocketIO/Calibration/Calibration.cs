@@ -202,8 +202,10 @@ public sealed class SeedChecker
             _log($"{seed.Id}：効いている {effective}、自明 {trivial}、層 {reach}{visibility}");
         }
 
-        // 元のビルドに戻す
+        // 元のビルドに戻し、校正用ビルドのイメージを消す（校正用バグ1件につき約 1.6GB 増えていた）
         await _lab.UpAsync(new UpOptions("test", new HashSet<string>(StringComparer.Ordinal), null, false, false), cancellationToken).ConfigureAwait(false);
+        var removed = await ImageBuilder.RemoveCalibrationImagesAsync(_lab.Docker, cancellationToken).ConfigureAwait(false);
+        _log($"校正用ビルドのイメージを {removed} 個消しました");
         _run.WriteJson("seeds-check.json", results);
         return results;
     }
@@ -303,6 +305,8 @@ public sealed class Calibrator
         }
 
         await _lab.UpAsync(new UpOptions("test", new HashSet<string>(StringComparer.Ordinal), null, false, false), cancellationToken).ConfigureAwait(false);
+        var removedImages = await ImageBuilder.RemoveCalibrationImagesAsync(_lab.Docker, cancellationToken).ConfigureAwait(false);
+        _log($"校正用ビルドのイメージを {removedImages} 個消しました");
 
         // 層ごとの検出率（自明な層 R1V1 は推定から外す。第19.11節）
         var layers = new List<LayerDetection>();

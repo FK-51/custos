@@ -103,6 +103,40 @@ public sealed class RunStore
         return sealedIds;
     }
 
+    /// <summary>
+    /// 前のプロセスが封をせずに終わり、running のまま残った実行に、理由を書いて封をする（status は aborted など）。
+    /// 実行中のものを閉じないよう、呼び出し側（人間）が ID を指定する。running でなければ何もしない（false）。
+    /// </summary>
+    public bool CloseStale(string id, string status, string reason)
+    {
+        ArgumentNullException.ThrowIfNull(id);
+        var dir = Path.Combine(_root, "runs", id);
+        var meta = Path.Combine(dir, "run.json");
+        if (!File.Exists(meta))
+        {
+            throw new CustosException($"実行が見つかりません：{id}");
+        }
+
+        var metadata = Json.Deserialize<RunMetadata>(File.ReadAllText(meta));
+        if (metadata.Status != "running")
+        {
+            return false;
+        }
+
+        lock (OpenGate)
+        {
+            if (Open.Any(r => r.Id == id && !r.IsSealed))
+            {
+                throw new CustosException($"実行 {id} はこのプロセスで実行中です（残ったものではありません）");
+            }
+        }
+
+        var run = new Run(this, dir, metadata);
+        run.WriteText($"{status}-{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture)}.txt", reason);
+        run.Seal(status);
+        return true;
+    }
+
     internal static void Forget(Run run)
     {
         lock (OpenGate)
