@@ -27,6 +27,8 @@ public sealed record LedgerLine(string RunId, string ManifestHash, string Previo
 /// </summary>
 public sealed class RunStore
 {
+    private static readonly object OpenGate = new();
+    private static readonly List<Run> Open = [];
     private readonly string _root;
 
     /// <summary>保存先のディレクトリを指定して作る。</summary>
@@ -64,7 +66,49 @@ public sealed class RunStore
             labels ?? new Dictionary<string, string>());
         var run = new Run(this, dir, metadata);
         run.WriteMetadata();
+        lock (OpenGate)
+        {
+            Open.Add(run);
+        }
+
         return run;
+    }
+
+    /// <summary>
+    /// このプロセスで始めて、まだ封をしていない実行に、理由を書いて封をする（status は error や aborted）。
+    /// コマンドが例外や中断で終わったときに呼ぶ。以前は封をされずに running のまま残り、結果の一覧で実行中と区別できなかった。
+    /// 返り値は封をした実行の ID。
+    /// </summary>
+    public static IReadOnlyList<string> SealOpenRuns(string status, string reason)
+    {
+        List<Run> open;
+        lock (OpenGate)
+        {
+            open = [.. Open];
+        }
+
+        var sealedIds = new List<string>();
+        foreach (var run in open)
+        {
+            if (run.IsSealed)
+            {
+                continue;
+            }
+
+            run.WriteText($"{status}-{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture)}.txt", reason);
+            run.Seal(status);
+            sealedIds.Add(run.Id);
+        }
+
+        return sealedIds;
+    }
+
+    internal static void Forget(Run run)
+    {
+        lock (OpenGate)
+        {
+            Open.Remove(run);
+        }
     }
 
     private int NextNumber()
@@ -229,6 +273,18 @@ public sealed class Run
     /// <summary>付帯情報。</summary>
     public RunMetadata Metadata => _metadata;
 
+    /// <summary>封をしたか。</summary>
+    public bool IsSealed
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _sealed;
+            }
+        }
+    }
+
     /// <summary>実行のディレクトリからの相対パスを絶対パスにする。</summary>
     public string PathOf(string relative) => Path.Combine(Dir, relative);
 
@@ -337,6 +393,7 @@ public sealed class Run
             File.WriteAllText(PathOf("manifest.json"), manifestText);
             var line = _store.AppendLedger(Id, Hashing.Sha256Hex(manifestText));
             _sealed = true;
+            RunStore.Forget(this);
             if (!OperatingSystem.IsWindows())
             {
                 foreach (var file in Directory.EnumerateFiles(Dir, "*", SearchOption.AllDirectories))

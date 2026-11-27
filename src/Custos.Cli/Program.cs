@@ -55,11 +55,43 @@ try
 }
 catch (CustosException e)
 {
+    SealOpenRuns("error", e.Message);
     await Console.Error.WriteLineAsync("エラー：" + e.Message).ConfigureAwait(false);
     return 1;
 }
 catch (OperationCanceledException)
 {
+    SealOpenRuns("aborted", "中断した（Ctrl+C）");
     await Console.Error.WriteLineAsync("中断しました").ConfigureAwait(false);
     return 130;
+}
+catch (Exception e)
+{
+    // 想定していない例外（ディスクの満杯など）でも、始めた実行に理由を書いて封をしてから落ちる
+    SealOpenRuns("error", e.ToString());
+    throw;
+}
+
+// 封をしていない実行に封をする。封をすること自体が失敗しても（ディスクの満杯など）、元のエラーを隠さない
+static void SealOpenRuns(string status, string reason)
+{
+    try
+    {
+        foreach (var id in Custos.Core.Results.RunStore.SealOpenRuns(status, reason))
+        {
+            Console.Error.WriteLine($"実行 {id} を {status} として封をしました");
+        }
+    }
+    catch (IOException e)
+    {
+        Console.Error.WriteLine("封をできなかった実行があります：" + e.Message);
+    }
+    catch (UnauthorizedAccessException e)
+    {
+        Console.Error.WriteLine("封をできなかった実行があります：" + e.Message);
+    }
+    catch (CustosException e)
+    {
+        Console.Error.WriteLine("封をできなかった実行があります：" + e.Message);
+    }
 }

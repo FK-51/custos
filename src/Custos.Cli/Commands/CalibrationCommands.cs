@@ -66,6 +66,7 @@ public static class CalibrationCommands
         var run = context.Results.Begin("calibrate", context.Config.Hash, context.Config.FileHashes);
         var lab = context.Lab;
         var games = (int)args.Number("games", 2);
+        var round = 0;
 
         // 探索：段階1の機械判定（ボットの対局と汎用の判定・不変条件、局面の検査）。探索役のループ（--agent）は台帳の対象を割り当てる
         async Task<IReadOnlyList<Finding>> ExploreAsync(CancellationToken token)
@@ -76,14 +77,20 @@ public static class CalibrationCommands
             {
                 found.AddRange(await new PhaseProber(lab, run, CliContext.Log).RunAsync(token).ConfigureAwait(false));
             }
+            // 探索は基準と校正用バグごとに呼ぶので、試行の ID に回の番号を付ける（同じ実行の中で証拠のファイルがぶつからないように）
+            round++;
             if (args.Get("agent") is "scripted" or "claude-code")
             {
                 var definition = LedgerDefinition.Load(context.Workspace, context.Config);
                 var ledger = LedgerStore.Build(definition, null);
                 IExplorer explorer = args.Get("agent") == "claude-code" ? new ClaudeCodeExplorer(lab, run, "explorer", context.Config.Agents?.Roles.GetValueOrDefault("explorer")?.Model) : new ScriptedExplorer(lab, run, CliContext.Log);
+                var index = 0;
                 foreach (var entry in ledger.Where(e => e.Kind == "card" && e.Situation == "normal").Take((int)args.Number("targets", 3)))
                 {
-                    var report = await explorer.ExploreAsync(entry, "C-" + entry.Target, 11, token).ConfigureAwait(false);
+                    // 台帳は1枚のカードに観点（効果の結果、相手の見え方）ごとの項目があり、対象（カードの番号）だけでは一意にならない
+                    index++;
+                    var trialId = string.Create(CultureInfo.InvariantCulture, $"K{round:D2}-{index:D2}");
+                    var report = await explorer.ExploreAsync(entry, trialId, 11, token).ConfigureAwait(false);
                     if (report.Result == "bug")
                     {
                         found.Add(Finding.Create("explorer", "report_bug", Severity.High, 3, "exploration", report.Notes, null, [], entry.Id));
@@ -410,17 +417,17 @@ public static class CalibrationCommands
         }
 
         var report = newest with { Items = infos.Values.OrderBy(i => i.Id, StringComparer.Ordinal).ToList(), Results = results.Values.OrderBy(r => r.Id, StringComparer.Ordinal).ToList() };
+        // レベル3の条件の「カナリアの検出率」は、毎ループのカナリアの累積（第17.5節、第19.7節）。リリース判定と同じ数え方。
+        // 以前は校正で仕込んだバグの検出率をカナリアの検出率として渡していた（校正用バグの検出率は参考の数値として別に出す）
         var latest = Path.Combine(context.Workspace.DataDir, "calibration", "latest.json");
+        var calibration = File.Exists(latest) ? System.Text.Json.JsonSerializer.Deserialize<CalibrationResult>(File.ReadAllText(latest), Json.Options) : null;
+        var canaryRate = ReadCanaryRate(context.Workspace);
         CalibrationEvidence? evidence = null;
-        if (File.Exists(latest))
+        if (calibration != null || canaryRate != null)
         {
-            var calibration = System.Text.Json.JsonSerializer.Deserialize<CalibrationResult>(File.ReadAllText(latest), Json.Options);
-            if (calibration != null)
-            {
-                var total = calibration.Layers.Where(l => l.Layer != "R1V1").Sum(l => l.Seeded);
-                var hit = calibration.Layers.Where(l => l.Layer != "R1V1").Sum(l => l.Detected);
-                evidence = new CalibrationEvidence(total == 0 ? null : (double)hit / total, 0.9, calibration.At, calibration.Basis, null, null, LedgerStore.Coverage(LedgerStore.Load(context.Workspace)), null);
-            }
+            var total = calibration?.Layers.Where(l => l.Layer != "R1V1").Sum(l => l.Seeded) ?? 0;
+            var hit = calibration?.Layers.Where(l => l.Layer != "R1V1").Sum(l => l.Detected) ?? 0;
+            evidence = new CalibrationEvidence(canaryRate, 0.9, calibration?.At, calibration?.Basis ?? "none", null, null, LedgerStore.Coverage(LedgerStore.Load(context.Workspace)), null, total == 0 ? null : (double)hit / total);
         }
 
         return (report, MaturityCalculator.Compute(context.Config, report, evidence));

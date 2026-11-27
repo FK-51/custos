@@ -4,7 +4,12 @@ using Custos.Core.Conformance;
 
 namespace Custos.Core.Maturity;
 
-/// <summary>校正の根拠（設計書 第17.5節のレベル3の区分、第19.10節）。</summary>
+/// <summary>
+/// 校正の根拠（設計書 第17.5節のレベル3の区分、第19.10節）。
+/// CanaryDetectionRate は毎ループのカナリアの累積の検出率（第19.7節。data/calibration/canaries.jsonl）。
+/// MeasuredAt と Basis は校正（custos calibrate）の日時と根拠で、校正をしていなければ null と "none"。
+/// SeedDetectionRate は校正で仕込んだバグの検出率（自明な層を除く。参考の数値で、レベルの判定には使わない）。
+/// </summary>
 public sealed record CalibrationEvidence(
     double? CanaryDetectionRate,
     double CanaryThreshold,
@@ -13,7 +18,8 @@ public sealed record CalibrationEvidence(
     double? VerifierSensitivity,
     double? EscapeRatio,
     double? ExplorationCoverage,
-    double? NoisyKeyRatio);
+    double? NoisyKeyRatio,
+    double? SeedDetectionRate = null);
 
 /// <summary>成熟度のレベルと個別の数値（第17.5〜17.6節）。レベルは適合テストの結果から自動で決め、自己申告は認めない。</summary>
 public sealed record MaturityReport(
@@ -54,10 +60,24 @@ public static class MaturityCalculator
             level = "1";
             reason = "必須項目はすべて合格。時刻・シードの固定（B-3）と再実行の一致（B-4）が未合格のためレベル2に届かない";
         }
-        else if (!Passed("D-3") || calibration?.CanaryDetectionRate is not { } rate || rate < calibration.CanaryThreshold)
+        else if (!Passed("D-3") || calibration?.CanaryDetectionRate is not { } rate || rate < calibration.CanaryThreshold || calibration.MeasuredAt == null)
         {
             level = "2";
-            reason = "再現可能（B-3、B-4 合格）。バグ注入（D-3）とカナリアの検出率の基準を満たしていないためレベル3に届かない";
+            var missing = new List<string>();
+            if (!Passed("D-3"))
+            {
+                missing.Add("バグ注入（D-3）が未合格");
+            }
+
+            missing.Add(calibration?.CanaryDetectionRate is { } r
+                ? (r < calibration.CanaryThreshold ? $"カナリアの累積の検出率 {r:P0} が基準 {calibration.CanaryThreshold:P0} 未満" : string.Empty)
+                : "カナリアの記録がない");
+            if (calibration?.MeasuredAt == null)
+            {
+                missing.Add("校正（custos calibrate）をしていない（レベル3の区分 a〜c が決まらない）");
+            }
+
+            reason = "再現可能（B-3、B-4 合格）。レベル3に届かない：" + string.Join("、", missing.Where(m => m.Length > 0));
         }
         else
         {
@@ -108,7 +128,9 @@ public static class MaturityCalculator
                 ["stage3"] = invariants.Count == 0 ? null : (double)stageCounts.GetValueOrDefault(3) / invariants.Count,
             },
             ["canary_detection_rate"] = calibration?.CanaryDetectionRate,
-            ["canary_measured_at"] = calibration?.MeasuredAt?.ToString("O", System.Globalization.CultureInfo.InvariantCulture),
+            ["calibrated_at"] = calibration?.MeasuredAt?.ToString("O", System.Globalization.CultureInfo.InvariantCulture),
+            ["calibration_basis"] = calibration?.Basis,
+            ["seed_detection_rate"] = calibration?.SeedDetectionRate,
             ["excluded_keys"] = config.State.Determinism.Volatile.Count,
             ["noisy_key_ratio"] = calibration?.NoisyKeyRatio,
             ["verifier_sensitivity"] = calibration?.VerifierSensitivity,
