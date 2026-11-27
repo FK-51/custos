@@ -26,7 +26,8 @@ public static class ReproCommands
         ArgumentNullException.ThrowIfNull(args);
         var run = context.Results.Begin("determinism", context.Config.Hash, context.Config.FileHashes);
         var runs = (int)args.Number("runs", 5);
-        var result = await new DeterminismRunner(context.Lab, run).MeasureAsync(runs, cancellationToken).ConfigureAwait(false);
+        // --scenario：ほかのシナリオ（校正用バグの確認用シナリオなど）が決定的かを確かめる。以前は help に書いてあるのに読んでいなかった
+        var result = await new DeterminismRunner(context.Lab, run).MeasureAsync(runs, cancellationToken, args.Get("scenario")).ConfigureAwait(false);
         run.WriteJson("determinism.json", result.ToJson());
         var findings = new List<Finding>();
         if (result.Grade == "statistical")

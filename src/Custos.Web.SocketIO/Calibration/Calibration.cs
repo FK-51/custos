@@ -119,7 +119,8 @@ public static class SeedStore
 
 /// <summary>
 /// 校正用バグの品質チェック（第19.5節）と層の自動割り当て（第19.11節）。
-/// 1. 効いているか：確認用シナリオを、パッチありとなしのビルドで同じシードで実行し、結果が変わる
+/// 1. 効いているか：確認用シナリオを、パッチありとなしのビルドで同じシードで実行し、結果が変わる。
+///    パッチなしは2回実行し、状態が一致しなければ（確認用シナリオが決定的でない）、状態の変化は効き目の根拠にしない
 /// 2. 自明すぎないか：起動直後（何もしない）に汎用の判定器が反応しない
 /// 3. 層：目立ち度は、機械判定が反応する（V1）／手のログや送信された状態が変わる（V2）／見た目だけ（V3）。
 ///    到達の難しさは、確認用シナリオの手順数で代用する（R1：3以内、R2：4〜10、R3：11以上）
@@ -145,12 +146,12 @@ public sealed class SeedChecker
         ArgumentNullException.ThrowIfNull(seeds);
         var results = new List<SeedCheckResult>();
 
-        // パッチなし（基準）の結果を、確認用シナリオごとに取る
+        // パッチなし（基準）の結果を、確認用シナリオごとに2回取る（再現するかを確かめる）
         await _lab.UpAsync(new UpOptions("test", new HashSet<string>(StringComparer.Ordinal), null, false, false), cancellationToken).ConfigureAwait(false);
-        var baseline = new Dictionary<string, Outcome>(StringComparer.Ordinal);
+        var baseline = new Dictionary<string, (Outcome First, Outcome Second)>(StringComparer.Ordinal);
         foreach (var seed in seeds)
         {
-            baseline[seed.Id] = await RunConfirmAsync(seed, "base", cancellationToken).ConfigureAwait(false);
+            baseline[seed.Id] = (await RunConfirmAsync(seed, "base-1", cancellationToken).ConfigureAwait(false), await RunConfirmAsync(seed, "base-2", cancellationToken).ConfigureAwait(false));
         }
 
         foreach (var seed in seeds)
@@ -177,13 +178,26 @@ public sealed class SeedChecker
             var trivial = idle.SelectMany(r => r.Findings).Any(f => f.Stage == 1 && f.Category != "coverage");
 
             var patched = await RunConfirmAsync(seed, "patched", cancellationToken).ConfigureAwait(false);
-            var basis = baseline[seed.Id];
-            var newFindings = patched.Findings.Except(basis.Findings, StringComparer.Ordinal).ToList();
-            var stateChanged = patched.StateHash != basis.StateHash || patched.ScenarioOk != basis.ScenarioOk;
-            var visibility = newFindings.Count > 0 ? "V1" : stateChanged ? "V2" : patched.ScreenHash != basis.ScreenHash ? "V3" : "-";
+            var (basis, again) = baseline[seed.Id];
+            var newFindings = patched.Findings.Except(basis.Findings.Concat(again.Findings), StringComparer.Ordinal).ToList();
+
+            // 状態と画面の比較は、パッチなしの2回が一致するとき（確認用シナリオが決定的なとき）だけ根拠にする。
+            // 一致しなければ、パッチと関係なく毎回変わるので、「変化あり」が効き目の証拠にならない
+            var stateReproducible = basis.StateHash == again.StateHash && basis.ScenarioOk == again.ScenarioOk;
+            var sentReproducible = basis.SentHash == again.SentHash;
+            var screenReproducible = basis.ScreenHash == again.ScreenHash;
+            var stateChanged = stateReproducible && (patched.StateHash != basis.StateHash || patched.ScenarioOk != basis.ScenarioOk);
+            var sentChanged = sentReproducible && patched.SentHash != basis.SentHash;
+            var screenChanged = screenReproducible && patched.ScreenHash != basis.ScreenHash;
+
+            // V2：状態（スキーマのキー）か、送信された状態が変わる（第19.11節）
+            var visibility = newFindings.Count > 0 ? "V1" : stateChanged || sentChanged ? "V2" : screenChanged ? "V3" : "-";
             var effective = visibility != "-";
             var reach = patched.Steps <= 3 ? "R1" : patched.Steps <= 10 ? "R2" : "R3";
-            var detail = $"確認用シナリオ：パッチあり {(patched.ScenarioOk ? "成功" : "失敗")}／なし {(basis.ScenarioOk ? "成功" : "失敗")}。新しい機械判定 {newFindings.Count} 件{(newFindings.Count > 0 ? "（" + newFindings[0] + "）" : string.Empty)}。状態 {(stateChanged ? "変化あり" : "同じ")}";
+            const string NotComparable = "比べられない（パッチなしの2回で一致しない。確認用シナリオを決定的にする：ボットに think_ms を付けるなど）";
+            var state = !stateReproducible ? NotComparable : stateChanged ? "変化あり" : "同じ";
+            var sentText = !sentReproducible ? NotComparable : sentChanged ? "変化あり" : "同じ";
+            var detail = $"確認用シナリオ：パッチあり {(patched.ScenarioOk ? "成功" : "失敗")}／なし {(basis.ScenarioOk ? "成功" : "失敗")}。新しい機械判定 {newFindings.Count} 件{(newFindings.Count > 0 ? "（" + newFindings[0] + "）" : string.Empty)}。状態 {state}。送信された状態 {sentText}";
             results.Add(new SeedCheckResult(seed.Id, true, effective, trivial, reach, visibility, detail));
             _log($"{seed.Id}：効いている {effective}、自明 {trivial}、層 {reach}{visibility}");
         }
@@ -194,26 +208,38 @@ public sealed class SeedChecker
         return results;
     }
 
-    private sealed record Outcome(bool ScenarioOk, int Steps, string StateHash, string ScreenHash, IReadOnlyList<string> Findings);
+    private sealed record Outcome(bool ScenarioOk, int Steps, string StateHash, string ScreenHash, IReadOnlyList<string> Findings, string SentHash);
 
     private async Task<Outcome> RunConfirmAsync(SeedDefinition seed, string label, CancellationToken cancellationToken)
     {
-        await _lab.ResetAsync("initial", false, cancellationToken).ConfigureAwait(false);
-        await _lab.TestApiAsync("POST", "/__verify/seed", new JsonObject { ["seed"] = 20261126 }, cancellationToken).ConfigureAwait(false);
+        // 決定性の測定と同じ読み方（シードと時計の固定、この回の通信の記録だけ、{run} の固定）で状態を読む。
+        // 以前は時計も {run} も固定せず、socket の値に検証環境の起動からの通信をすべて混ぜていたので、同じビルドでも毎回ハッシュが変わっていた
+        // （実際に食い違ったのは、利用者の名前「bob-<乱数>」だった）
         var baseline = await JudgeContext.CaptureAsync(_lab, cancellationToken).ConfigureAwait(false);
-        var startSeq = _lab.Records.Activity().LastSeq;
-        var runner = new ScenarioRunner(_lab, _run, _log);
-        var result = await runner.RunAsync(Scenario.Load(seed.ConfirmPath), cancellationToken).ConfigureAwait(false);
-        await _lab.SettleAsync(TimeSpan.FromMilliseconds(600), TimeSpan.FromSeconds(20), cancellationToken).ConfigureAwait(false);
+        // {run}（利用者の名前などに使う）は、ScenarioRunner の既定では毎回の乱数なので、決定性の測定と同じく固定する
+        var once = await new Determinism.DeterminismRunner(_lab, _run).RunOnceAsync(Scenario.Load(seed.ConfirmPath), 20261126, cancellationToken, new Dictionary<string, JsonNode?>(StringComparer.Ordinal) { ["run"] = JsonValue.Create("seed") }).ConfigureAwait(false);
         var judges = await JudgeRunner.RunAsync(new JudgeContext(_lab, _run, baseline), JudgeRunner.Stage1(), cancellationToken).ConfigureAwait(false);
         var findings = judges.SelectMany(r => r.Findings).Where(f => f.Stage == 1 && f.Category != "coverage").Select(f => $"{f.Judge}:{f.Rule}").Distinct(StringComparer.Ordinal).ToList();
-        var keys = _lab.Config.State.Keys.Values.Where(k => k.Source is SqlSource or SocketSource && !_lab.Config.State.Determinism.Volatile.Contains(k.Name)).ToList();
-        var state = await new StateReader(_lab).ReadAsync(keys, null, "main", cancellationToken).ConfigureAwait(false);
-        var normalized = Determinism.DeterminismRunner.Normalize(new SortedDictionary<string, JsonNode?>(state.ToDictionary(r => r.Key, r => (JsonNode?)new JsonArray(r.Values.Select(v => (JsonNode?)new JsonArray(v.Entity, v.Value?.DeepClone())).ToArray()), StringComparer.Ordinal), StringComparer.Ordinal), _lab.Config.State.Determinism, Determinism.DeterminismRunner.ConnectionOrder(_lab, startSeq));
-        var stateHash = Hashing.Sha256Hex(Json.Canonical(new JsonObject(normalized.Select(p => new KeyValuePair<string, JsonNode?>(p.Key, p.Value?.DeepClone())))));
-        var screens = result.Steps.Where(s => s.Kind == "browser_screenshot").Select(s => s.Data?.ToJsonString() ?? string.Empty);
-        _run.WriteJson($"seeds/{seed.Id}-{label}.json", new JsonObject { ["scenario_ok"] = result.Ok, ["error"] = result.Error, ["findings"] = new JsonArray(findings.Select(f => (JsonNode?)JsonValue.Create(f)).ToArray()), ["state_hash"] = stateHash });
-        return new Outcome(result.Ok, result.Steps.Count, stateHash, Hashing.Sha256Hex(string.Join("|", screens)), findings);
+        var normalized = Determinism.DeterminismRunner.Normalize(once.State, _lab.Config.State.Determinism, once.ConnectionOrder);
+        var stateHash = Hashing.Sha256Hex(Json.Canonical(Determinism.DeterminismRunner.StateNode(normalized)));
+
+        // 送信された状態（状態のスキーマにない項目も含む。例：公開前の札を送る校正用バグ）
+        var sent = Determinism.DeterminismRunner.SentNode(_lab.Records.Read(once.StartSeq), once.ConnectionOrder);
+        var sentHash = Hashing.Sha256Hex(Json.Canonical(sent));
+        var screens = once.Result.Steps.Where(s => s.Kind == "browser_screenshot").Select(s => s.Data?.ToJsonString() ?? string.Empty);
+
+        // 証拠：正規化した後の状態（パッチあり・なし、なし同士で、どのキーが違うかを後から確かめられるように）
+        _run.WriteJson($"seeds/{seed.Id}-{label}.json", new JsonObject
+        {
+            ["scenario_ok"] = once.Result.Ok,
+            ["error"] = once.Result.Error,
+            ["findings"] = new JsonArray(findings.Select(f => (JsonNode?)JsonValue.Create(f)).ToArray()),
+            ["state_hash"] = stateHash,
+            ["sent_hash"] = sentHash,
+            ["normalized"] = Determinism.DeterminismRunner.StateNode(normalized),
+            ["sent"] = sent,
+        });
+        return new Outcome(once.Result.Ok, once.Result.Steps.Count, stateHash, Hashing.Sha256Hex(string.Join("|", screens)), findings, sentHash);
     }
 }
 
