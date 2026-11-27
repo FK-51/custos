@@ -39,9 +39,7 @@ public static class CalibrationCommands
         }
 
         run.WriteText("seeds-check.md", text.ToString());
-        var summary = Path.Combine(context.Workspace.DataDir, "calibration", "seeds-check.json");
-        Directory.CreateDirectory(Path.GetDirectoryName(summary) ?? context.Workspace.DataDir);
-        await File.WriteAllTextAsync(summary, Json.Serialize(results), cancellationToken).ConfigureAwait(false);
+        SeedStore.SaveChecks(SeedStore.ChecksPath(context.Workspace), results);
         run.Seal(results.All(r => r.Usable) ? "passed" : "failed");
         CliContext.Out(text.ToString());
         return results.All(r => r.Usable) ? 0 : 1;
@@ -59,10 +57,7 @@ public static class CalibrationCommands
             throw new CustosException("使っていない校正用バグがありません（使用済みは再利用しない。第19.8節）");
         }
 
-        var checksPath = Path.Combine(context.Workspace.DataDir, "calibration", "seeds-check.json");
-        var checks = File.Exists(checksPath)
-            ? (System.Text.Json.JsonSerializer.Deserialize<List<SeedCheckResult>>(await File.ReadAllTextAsync(checksPath, cancellationToken).ConfigureAwait(false), Json.Options) ?? []).ToDictionary(c => c.Id, StringComparer.Ordinal)
-            : new Dictionary<string, SeedCheckResult>(StringComparer.Ordinal);
+        var checks = SeedStore.LoadChecks(SeedStore.ChecksPath(context.Workspace)).ToDictionary(c => c.Id, StringComparer.Ordinal);
         var run = context.Results.Begin("calibrate", context.Config.Hash, context.Config.FileHashes);
         var lab = context.Lab;
         var games = (int)args.Number("games", 2);

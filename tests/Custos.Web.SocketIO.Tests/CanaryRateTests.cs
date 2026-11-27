@@ -56,3 +56,36 @@ public sealed class CanaryRateTests : IDisposable
         Assert.False(CanaryRunner.Counts(JsonNode.Parse("""{"name":"p","applied":true,"exercised":false,"detected":false}""") ?? new JsonObject()));
     }
 }
+
+/// <summary>校正用バグの品質チェックの結果の保存（第19.5節）。一部だけ確かめ直しても、ほかの結果を消さない。</summary>
+public sealed class SeedChecksStoreTests : IDisposable
+{
+    private readonly string _path = Path.Combine(Path.GetTempPath(), "custos-seeds-" + Guid.NewGuid().ToString("N"), "seeds-check.json");
+
+    public void Dispose()
+    {
+        var dir = Path.GetDirectoryName(_path);
+        if (dir != null && Directory.Exists(dir))
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void ResultsAreMergedById()
+    {
+        SeedStore.SaveChecks(_path, [new SeedCheckResult("seed-001", true, true, false, "R1", "V2", "最初"), new SeedCheckResult("seed-002", true, false, false, "R1", "-", "最初")]);
+        var merged = SeedStore.SaveChecks(_path, [new SeedCheckResult("seed-002", true, true, false, "R2", "V2", "確かめ直し"), new SeedCheckResult("seed-003", true, true, false, "R1", "V1", "新しい")]);
+        Assert.Equal(["seed-001", "seed-002", "seed-003"], merged.Select(c => c.Id));
+        var loaded = SeedStore.LoadChecks(_path).ToDictionary(c => c.Id);
+        Assert.Equal("R1V2", loaded["seed-001"].Layer);
+        Assert.Equal("R2V2", loaded["seed-002"].Layer);
+        Assert.Equal("確かめ直し", loaded["seed-002"].Detail);
+    }
+
+    [Fact]
+    public void MissingFileIsEmpty()
+    {
+        Assert.Empty(SeedStore.LoadChecks(_path));
+    }
+}

@@ -75,6 +75,40 @@ public static class SeedStore
 
     private static string UsedPath(Workspace workspace) => Path.Combine(workspace.DataDir, "calibration", "used.json");
 
+    /// <summary>品質チェックの結果の置き場所（data/calibration/seeds-check.json。校正が層の割り当てに使う）。</summary>
+    public static string ChecksPath(Workspace workspace)
+    {
+        ArgumentNullException.ThrowIfNull(workspace);
+        return Path.Combine(workspace.DataDir, "calibration", "seeds-check.json");
+    }
+
+    /// <summary>
+    /// 品質チェックの結果を ID ごとに足し合わせて保存する（同じ ID は新しい結果で置き換える）。以前は最後に実行した分で上書きしていたので、
+    /// 一部の校正用バグだけを確かめ直すと、ほかの校正用バグの層が校正で「unknown」になっていた。
+    /// </summary>
+    public static IReadOnlyList<SeedCheckResult> SaveChecks(string path, IReadOnlyList<SeedCheckResult> results)
+    {
+        ArgumentNullException.ThrowIfNull(path);
+        ArgumentNullException.ThrowIfNull(results);
+        var merged = LoadChecks(path).ToDictionary(c => c.Id, StringComparer.Ordinal);
+        foreach (var result in results)
+        {
+            merged[result.Id] = result;
+        }
+
+        var list = merged.Values.OrderBy(c => c.Id, StringComparer.Ordinal).ToList();
+        Directory.CreateDirectory(Path.GetDirectoryName(path) ?? ".");
+        File.WriteAllText(path, Json.Serialize(list));
+        return list;
+    }
+
+    /// <summary>品質チェックの結果を読む（なければ空）。</summary>
+    public static IReadOnlyList<SeedCheckResult> LoadChecks(string path)
+    {
+        ArgumentNullException.ThrowIfNull(path);
+        return File.Exists(path) ? System.Text.Json.JsonSerializer.Deserialize<List<SeedCheckResult>>(File.ReadAllText(path), Json.Options) ?? [] : [];
+    }
+
     /// <summary>使用済みの ID。</summary>
     public static HashSet<string> Used(Workspace workspace)
     {
