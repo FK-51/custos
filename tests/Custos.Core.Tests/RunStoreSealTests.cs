@@ -49,4 +49,17 @@ public sealed class RunStoreSealTests : IDisposable
         // 2回目は何もしない（封をしたものは対象から外れる）
         Assert.DoesNotContain(open.Id, RunStore.SealOpenRuns("error", "もう一度"));
     }
+
+    [Fact]
+    public void FreeNameNumbersCollidingFiles()
+    {
+        var run = new RunStore(_dir).Begin("calibrate", null, null);
+        Assert.Equal("phase-matrix.json", run.FreeName("phase-matrix.json"));
+        run.WriteText("phase-matrix.json", "1");
+        Assert.Equal("phase-matrix-2.json", run.FreeName("phase-matrix.json"));
+        run.WriteText("phase-matrix-2.json", "2");
+        Assert.Equal("phase-matrix-3.json", run.FreeName("phase-matrix.json"));
+        Assert.Equal("trials/x/notes-2", run.FreeName("trials/x/notes-2"));
+        run.Seal("passed");
+    }
 }

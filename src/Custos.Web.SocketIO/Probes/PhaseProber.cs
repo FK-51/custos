@@ -100,7 +100,8 @@ public sealed class PhaseProber
         // 提示されていない選択肢（第25.4節）
         findings.AddRange(await OutOfChoicesAsync(cancellationToken).ConfigureAwait(false));
         var table = new JsonArray(cases.Select(c => (JsonNode?)JsonNode.Parse(Json.SerializeCompact(c))).ToArray());
-        _run.WriteJson("phase-matrix.json", table);
+        // 同じ実行の中で何度も呼ばれる（校正の探索ごと）ので、名前がぶつかったら番号を付ける
+        _run.WriteJson(_run.FreeName("phase-matrix.json"), table);
         var tested = cases.Count(c => !c.Allowed && c.Outcome is not "no_user");
         _log($"局面 × イベント × 送り手：{cases.Count} 通り（許されていない組み合わせを {tested} 通り試した）");
         return findings;
@@ -305,6 +306,7 @@ public sealed class PhaseProber
         var replyEvent = protocol["reply_event"]?.GetValue<string>() ?? string.Empty;
         var replyTemplate = protocol["reply_template"]?.DeepClone();
         var attempts = new JsonArray();
+        var attemptsFile = _run.FreeName("phase-unoffered.json");
         for (var round = 0; round < 3; round++)
         {
             var (variables, actors) = await PrepareAsync(setup, cancellationToken).ConfigureAwait(false);
@@ -349,11 +351,11 @@ public sealed class PhaseProber
             attempts.Add(new JsonObject { ["round"] = round, ["kind"] = kind, ["offered"] = choices.DeepClone(), ["sent"] = reply?.DeepClone(), ["outcome"] = outcome, ["changes"] = new JsonArray(changes.Concat(broadcasts).Take(10).Select(c => (JsonNode?)JsonValue.Create(c)).ToArray()) });
             if (outcome == "changed")
             {
-                findings.Add(Finding.Create("phase_prober", "unoffered_choice_accepted", Severity.High, 1, "rule_break", $"提示されていない選択肢（{invalid?.ToJsonString()}、提示は {choices.ToJsonString()}、種類 {kind}）を送ると、拒否されずに状態が変わりました（{string.Join("、", changes.Concat(broadcasts).Take(3))}）", null, [new Evidence("試した記録", "phase-unoffered.json")], $"unoffered:{kind}"));
+                findings.Add(Finding.Create("phase_prober", "unoffered_choice_accepted", Severity.High, 1, "rule_break", $"提示されていない選択肢（{invalid?.ToJsonString()}、提示は {choices.ToJsonString()}、種類 {kind}）を送ると、拒否されずに状態が変わりました（{string.Join("、", changes.Concat(broadcasts).Take(3))}）", null, [new Evidence("試した記録", attemptsFile)], $"unoffered:{kind}"));
             }
         }
 
-        _run.WriteJson("phase-unoffered.json", attempts);
+        _run.WriteJson(attemptsFile, attempts);
         return Findings.Group(findings).Select(g => g.Finding).ToList();
     }
 

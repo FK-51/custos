@@ -338,6 +338,33 @@ public sealed class Run
         }
     }
 
+    /// <summary>
+    /// まだ使っていない名前を返す（relative がすでにあれば、拡張子の前に -2、-3… を付ける）。
+    /// 同じ実行の中で何度も呼ばれる部品（校正の探索ごとの局面の検査など）が、証拠を上書きせずに残すために使う。
+    /// </summary>
+    public string FreeName(string relative)
+    {
+        ArgumentNullException.ThrowIfNull(relative);
+        lock (_gate)
+        {
+            if (!File.Exists(PathOf(relative)))
+            {
+                return relative;
+            }
+
+            var extension = Path.GetExtension(relative);
+            var stem = relative[..^extension.Length];
+            for (var n = 2; ; n++)
+            {
+                var candidate = string.Create(CultureInfo.InvariantCulture, $"{stem}-{n}{extension}");
+                if (!File.Exists(PathOf(candidate)))
+                {
+                    return candidate;
+                }
+            }
+        }
+    }
+
     private string PrepareNew(string relative)
     {
         lock (_gate)
