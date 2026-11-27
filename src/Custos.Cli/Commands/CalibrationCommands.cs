@@ -211,7 +211,10 @@ public static class CalibrationCommands
                 var report = System.Text.Json.JsonSerializer.Deserialize<TrialReport>(await File.ReadAllTextAsync(reportPath, cancellationToken).ConfigureAwait(false), Json.Options);
                 if (report != null && Directory.Exists(Path.Combine(context.Workspace.RecordsDir, report.RecordsSession)))
                 {
-                    using var db = await RecordsDatabase.BuildAsync(context.Lab, report.RecordsFrom, false, cancellationToken).ConfigureAwait(false);
+                    // そのレポートのセッションと範囲の記録だけで判定し直す（以前は、いまの検証環境の記録を report.RecordsFrom から最後まで
+                    // 読んでいて、別の日のカナリアの違反まで「誤り」と判定していた）
+                    var store = new Custos.Web.SocketIO.Records.RecordStore(Path.Combine(context.Workspace.RecordsDir, report.RecordsSession));
+                    using var db = await RecordsDatabase.BuildAsync(context.Lab, store, report.RecordsFrom, report.RecordsTo, false, cancellationToken).ConfigureAwait(false);
                     foreach (var invariant in (context.Config.Invariants?.Invariants ?? []).Where(i => i.Kind == InvariantKind.SentSql && i.Query != null))
                     {
                         try

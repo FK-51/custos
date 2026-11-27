@@ -85,9 +85,21 @@ public sealed class RecordsDatabase : IDisposable
     public SqliteConnection Connection => _connection;
 
     /// <summary>記録から作る。withApp なら、アプリの DB の整合の取れた複製を app として添付する。</summary>
-    public static async Task<RecordsDatabase> BuildAsync(Lab.Lab lab, long sinceSeq, bool withApp, CancellationToken cancellationToken)
+    public static Task<RecordsDatabase> BuildAsync(Lab.Lab lab, long sinceSeq, bool withApp, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(lab);
+        return BuildAsync(lab, lab.Records, sinceSeq, null, withApp, cancellationToken);
+    }
+
+    /// <summary>
+    /// 指定した記録（セッション）の、sinceSeq より後・untilSeq まで（null なら最後まで）から作る。
+    /// 過去の試行のレポートを判定し直すとき（抜き取り検証）は、そのレポートのセッションと範囲を渡す。
+    /// いまの検証環境の記録を使うと、別の試行（後のカナリアなど）の通信まで判定してしまう。
+    /// </summary>
+    public static async Task<RecordsDatabase> BuildAsync(Lab.Lab lab, Records.RecordStore store, long sinceSeq, long? untilSeq, bool withApp, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(lab);
+        ArgumentNullException.ThrowIfNull(store);
         var connection = new SqliteConnection("Data Source=:memory:");
         connection.Open();
         using (var create = connection.CreateCommand())
@@ -101,9 +113,9 @@ public sealed class RecordsDatabase : IDisposable
             create.ExecuteNonQuery();
         }
 
-        var socketIds = lab.Records.SocketIds();
+        var socketIds = store.SocketIds();
         using var transaction = connection.BeginTransaction();
-        foreach (var entry in lab.Records.Read(sinceSeq))
+        foreach (var entry in store.Read(sinceSeq).Where(e => untilSeq == null || e.Seq <= untilSeq))
         {
             using var insert = connection.CreateCommand();
             insert.Transaction = transaction;

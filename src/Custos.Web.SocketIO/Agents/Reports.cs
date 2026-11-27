@@ -158,7 +158,8 @@ public sealed class ReportChecker
         bool? reached = null;
         if (entry != null && _definition.Situations.TryGetValue(entry.Situation, out var situation) && situation.ConditionSql != null)
         {
-            using var db = await RecordsDatabase.BuildAsync(_lab, report.RecordsFrom, withApp: false, cancellationToken).ConfigureAwait(false);
+            // レポートのセッションと範囲の記録で確かめる（いまの検証環境の記録ではなく）
+            using var db = await RecordsDatabase.BuildAsync(_lab, new Records.RecordStore(sessionDir), report.RecordsFrom, report.RecordsTo, withApp: false, cancellationToken).ConfigureAwait(false);
             var condition = situation.ConditionSql
                 .Replace("{from}", report.RecordsFrom.ToString(CultureInfo.InvariantCulture), StringComparison.Ordinal)
                 .Replace("{to}", report.RecordsTo.ToString(CultureInfo.InvariantCulture), StringComparison.Ordinal)
