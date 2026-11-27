@@ -26,6 +26,26 @@ public sealed class SecurityProber
     private readonly Run _run;
     private readonly Action<string> _log;
 
+    private string? _tokensFile;
+
+    /// <summary>証拠のファイル名（同じ実行で何度呼ばれても、ぶつからない名前を最初に決めて使い続ける）。</summary>
+    private string TokensFile => _tokensFile ??= _run.FreeName("security-tokens.json");
+
+    private string? _inputsFile;
+
+    /// <summary>証拠のファイル名（同じ実行で何度呼ばれても、ぶつからない名前を最初に決めて使い続ける）。</summary>
+    private string InputsFile => _inputsFile ??= _run.FreeName("security-inputs.json");
+
+    private string? _hijackScenarioFile;
+
+    /// <summary>証拠のファイル名（同じ実行で何度呼ばれても、ぶつからない名前を最初に決めて使い続ける）。</summary>
+    private string HijackScenarioFile => _hijackScenarioFile ??= _run.FreeName("security-hijack-scenario.json");
+
+    private string? _hijackFile;
+
+    /// <summary>証拠のファイル名（同じ実行で何度呼ばれても、ぶつからない名前を最初に決めて使い続ける）。</summary>
+    private string HijackFile => _hijackFile ??= _run.FreeName("security-hijack.json");
+
     /// <summary>作る。</summary>
     public SecurityProber(Lab.Lab lab, Run run, Action<string> log)
     {
@@ -98,11 +118,11 @@ public sealed class SecurityProber
             report.Add(new JsonObject { ["key"] = key.Name, ["analysis"] = JsonNode.Parse(Json.SerializeCompact(analysis)) });
             foreach (var problem in analysis.Problems)
             {
-                findings.Add(Finding.Create("security_prober", "predictable_secret", Severity.Critical, 1, "seat_hijack", $"秘密の値 {key.Name} が推測できる疑い：{problem}", null, [new Evidence("分析", "security-tokens.json")], key.Name + ":" + problem[..Math.Min(20, problem.Length)]));
+                findings.Add(Finding.Create("security_prober", "predictable_secret", Severity.Critical, 1, "seat_hijack", $"秘密の値 {key.Name} が推測できる疑い：{problem}", null, [new Evidence("分析", TokensFile)], key.Name + ":" + problem[..Math.Min(20, problem.Length)]));
             }
         }
 
-        _run.WriteJson("security-tokens.json", report);
+        _run.WriteJson(TokensFile, report);
         _log($"秘密の値の分析：{keys.Count} 種類、各 {count} 件（問題 {findings.Count} 件）");
         return findings;
     }
@@ -175,11 +195,11 @@ public sealed class SecurityProber
                         pageResults.Add(new JsonObject { ["page"] = page, ["result"] = value.DeepClone() });
                         if (value["ran"]?.GetValue<bool>() == true)
                         {
-                            findings.Add(Finding.Create("security_prober", "xss_executed", Severity.Critical, 1, "xss", $"目印を付けたスクリプトが、別の利用者のブラウザ（{page}）で実行されました（入力：{payload}）", null, [new Evidence("試した記録", "security-inputs.json")], "xss:" + page + ":" + XssTemplates.ToList().FindIndex(t => payload.StartsWith(t[..6], StringComparison.Ordinal))));
+                            findings.Add(Finding.Create("security_prober", "xss_executed", Severity.Critical, 1, "xss", $"目印を付けたスクリプトが、別の利用者のブラウザ（{page}）で実行されました（入力：{payload}）", null, [new Evidence("試した記録", InputsFile)], "xss:" + page + ":" + XssTemplates.ToList().FindIndex(t => payload.StartsWith(t[..6], StringComparison.Ordinal))));
                         }
                         else if (value["injected"]?.GetValue<double>() > 0)
                         {
-                            findings.Add(Finding.Create("security_prober", "html_injected", Severity.High, 1, "xss", $"入力がHTMLとして画面に入りました（スクリプトは実行されていない。ブラウザ {page}、入力：{payload}）", null, [new Evidence("試した記録", "security-inputs.json")], "html:" + page));
+                            findings.Add(Finding.Create("security_prober", "html_injected", Severity.High, 1, "xss", $"入力がHTMLとして画面に入りました（スクリプトは実行されていない。ブラウザ {page}、入力：{payload}）", null, [new Evidence("試した記録", InputsFile)], "html:" + page));
                         }
                     }
                     catch (CustosException e)
@@ -197,7 +217,7 @@ public sealed class SecurityProber
                 entry["schema_unchanged"] = schemaBefore == schemaAfter;
                 if (schemaBefore != schemaAfter)
                 {
-                    findings.Add(Finding.Create("security_prober", "sql_injection_schema", Severity.Critical, 1, "sqli", $"SQL の断片を入力すると、DB の構造が変わりました（入力：{payload}）", null, [new Evidence("試した記録", "security-inputs.json")], "sqli-schema"));
+                    findings.Add(Finding.Create("security_prober", "sql_injection_schema", Severity.Critical, 1, "sqli", $"SQL の断片を入力すると、DB の構造が変わりました（入力：{payload}）", null, [new Evidence("試した記録", InputsFile)], "sqli-schema"));
                 }
 
                 var logs = await new LogJudge().JudgeAsync(new JudgeContext(_lab, _run, baseline), cancellationToken).ConfigureAwait(false);
@@ -205,7 +225,7 @@ public sealed class SecurityProber
                 entry["sql_errors_in_log"] = sqlErrors.Count;
                 if (sqlErrors.Count > 0)
                 {
-                    findings.Add(Finding.Create("security_prober", "sql_injection_error", Severity.Critical, 1, "sqli", $"SQL の断片を入力すると、SQL のエラーがログに出ました（入力が SQL として解釈された疑い。入力：{payload}）", sqlErrors[0].Summary, [new Evidence("試した記録", "security-inputs.json")], "sqli-error"));
+                    findings.Add(Finding.Create("security_prober", "sql_injection_error", Severity.Critical, 1, "sqli", $"SQL の断片を入力すると、SQL のエラーがログに出ました（入力が SQL として解釈された疑い。入力：{payload}）", sqlErrors[0].Summary, [new Evidence("試した記録", InputsFile)], "sqli-error"));
                 }
             }
 
@@ -213,11 +233,11 @@ public sealed class SecurityProber
         }
 
         // 秘密の値の照合（SQL の断片で読み出されていないか）
-        _run.WriteJson("security-inputs.json", results);
+        _run.WriteJson(InputsFile, results);
         var notShown = results.OfType<JsonObject>().Count(r => r["kind"]?.GetValue<string>() == "xss" && r["shown_somewhere"]?.GetValue<bool>() != true);
         if (notShown > 0)
         {
-            findings.Add(Finding.Create("security_prober", "xss_not_displayed", Severity.Low, 1, "coverage", $"目印を付けた入力のうち {notShown} 件は、被害者の画面に表示されなかったため、その表示箇所は確かめられていません（未確認。入力の長さの制限などで切られた可能性）", null, [new Evidence("試した記録", "security-inputs.json")], "xss-not-displayed"));
+            findings.Add(Finding.Create("security_prober", "xss_not_displayed", Severity.Low, 1, "coverage", $"目印を付けた入力のうち {notShown} 件は、被害者の画面に表示されなかったため、その表示箇所は確かめられていません（未確認。入力の長さの制限などで切られた可能性）", null, [new Evidence("試した記録", InputsFile)], "xss-not-displayed"));
         }
 
         _log($"表示される入力：{payloads.Count} 通り（問題 {findings.Count(f => f.Category != "coverage")} 件）");
@@ -238,7 +258,7 @@ public sealed class SecurityProber
         var runner = new ScenarioRunner(_lab, _run, _log);
         var result = await runner.RunAsync(Scenario.Load(path), cancellationToken).ConfigureAwait(false);
         await _lab.SettleAsync(TimeSpan.FromMilliseconds(500), TimeSpan.FromSeconds(15), cancellationToken).ConfigureAwait(false);
-        _run.WriteJson("security-hijack-scenario.json", JsonNode.Parse(Json.SerializeCompact(result)));
+        _run.WriteJson(HijackScenarioFile, JsonNode.Parse(Json.SerializeCompact(result)));
         var findings = new List<Finding>();
         if (!runner.Variables.TryGetValue("hijack", out var node) || node is not JsonObject hijack)
         {
@@ -286,7 +306,7 @@ public sealed class SecurityProber
             evidence["views_of_victim_received_by_attacker"] = stolen.Count;
             if (stolen.Count > 0)
             {
-                findings.Add(Finding.Create("security_prober", "victim_view_received", Severity.Critical, 1, "seat_hijack", $"攻撃役（{attacker}）が、被害者（{victim}）あての状態を {stolen.Count} 回受け取りました（席の乗っ取り。{string.Join(", ", ownerKeys.Select(k => k.Name))} が見える）", null, [new Evidence("判定", "security-hijack.json")], "victim_view"));
+                findings.Add(Finding.Create("security_prober", "victim_view_received", Severity.Critical, 1, "seat_hijack", $"攻撃役（{attacker}）が、被害者（{victim}）あての状態を {stolen.Count} 回受け取りました（席の乗っ取り。{string.Join(", ", ownerKeys.Select(k => k.Name))} が見える）", null, [new Evidence("判定", HijackFile)], "victim_view"));
             }
         }
 
@@ -327,14 +347,14 @@ public sealed class SecurityProber
             evidence["victim_moves_without_victim_reply"] = forced;
             if (forced > 0)
             {
-                findings.Add(Finding.Create("security_prober", "acted_as_victim", Severity.Critical, 1, "seat_hijack", $"被害者（{victim}）が何も送っていないのに、被害者の場の札が {forced} 回増えました（被害者として手を打たれた疑い。時間切れの自動処理でないか確認が要る）", null, [new Evidence("判定", "security-hijack.json")], "acted_as_victim"));
+                findings.Add(Finding.Create("security_prober", "acted_as_victim", Severity.Critical, 1, "seat_hijack", $"被害者（{victim}）が何も送っていないのに、被害者の場の札が {forced} 回増えました（被害者として手を打たれた疑い。時間切れの自動処理でないか確認が要る）", null, [new Evidence("判定", HijackFile)], "acted_as_victim"));
             }
         }
 
         // 秘密の値が攻撃役に届いていないか（汎用の判定器）
         var leaks = await new SecretLeakJudge().JudgeAsync(new JudgeContext(_lab, _run, baseline), cancellationToken).ConfigureAwait(false);
         findings.AddRange(leaks.Findings);
-        _run.WriteJson("security-hijack.json", evidence);
+        _run.WriteJson(HijackFile, evidence);
         _log($"席の乗っ取り：シナリオ {(result.Ok ? "完了" : "途中で失敗：" + result.Error)}、問題 {findings.Count} 件");
         return findings;
     }

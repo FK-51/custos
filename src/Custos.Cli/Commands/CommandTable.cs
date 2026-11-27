@@ -61,7 +61,7 @@ public static class CommandTable
 
         // 段階4：校正と統計
         new("seeds check", "seeds check", "校正用バグの品質チェック（効いているか、自明すぎないか、層の割り当て）", CalibrationCommands.SeedsCheckAsync),
-        new("calibrate", "calibrate [--seeds <ID,...>] [--agent scripted|claude-code]", "校正を実行する（検出率の測定）", CalibrationCommands.CalibrateAsync),
+        new("calibrate", "calibrate [--seeds <ID,...>] [--phases|--stage1] [--agent scripted|claude-code]", "校正を実行する（検出率の測定）", CalibrationCommands.CalibrateAsync),
         new("canary", "canary [--count 3]", "毎ループのカナリア", CalibrationCommands.CanaryAsync),
         new("sample", "sample [--n N]", "抜き取り検証（ブラインド判定と誤り率の上限）", CalibrationCommands.SampleAsync),
         new("maturity", "maturity", "成熟度のレベルと個別の数値", CalibrationCommands.MaturityAsync),

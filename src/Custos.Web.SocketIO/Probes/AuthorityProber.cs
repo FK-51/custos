@@ -23,6 +23,11 @@ public sealed class AuthorityProber
     private readonly Run _run;
     private readonly Action<string> _log;
 
+    private string? _authorityFile;
+
+    /// <summary>証拠のファイル名（同じ実行で何度呼ばれても、ぶつからない名前を最初に決めて使い続ける）。</summary>
+    private string AuthorityFile => _authorityFile ??= _run.FreeName("authority-probe.json");
+
     /// <summary>作る。</summary>
     public AuthorityProber(Lab.Lab lab, Run run, Action<string> log)
     {
@@ -119,11 +124,11 @@ public sealed class AuthorityProber
             rows.Add(new JsonObject { ["event"] = name, ["sender"] = sender, ["sent"] = filled.DeepClone(), ["accepted"] = new JsonArray(accepted.Select(a => (JsonNode?)JsonValue.Create(a)).ToArray()) });
             foreach (var key in accepted)
             {
-                findings.Add(Finding.Create("authority_prober", "server_authority_violated", Severity.Critical, 1, "rule_break", $"サーバー権威と宣言した {key} を、クライアントが {name} に付けた偽の値で書き換えられました（宣言と実態のずれ。第15.4節）", null, [new Evidence("試した記録", "authority-probe.json")], $"{key}:{name}"));
+                findings.Add(Finding.Create("authority_prober", "server_authority_violated", Severity.Critical, 1, "rule_break", $"サーバー権威と宣言した {key} を、クライアントが {name} に付けた偽の値で書き換えられました（宣言と実態のずれ。第15.4節）", null, [new Evidence("試した記録", AuthorityFile)], $"{key}:{name}"));
             }
         }
 
-        _run.WriteJson("authority-probe.json", new JsonObject { ["fields"] = new JsonArray(fakes.Select(f => (JsonNode?)new JsonObject { ["field"] = f.Key, ["key"] = f.Value.Key.Name, ["fake"] = f.Value.Fake.DeepClone() }).ToArray()), ["events"] = rows });
+        _run.WriteJson(AuthorityFile, new JsonObject { ["fields"] = new JsonArray(fakes.Select(f => (JsonNode?)new JsonObject { ["field"] = f.Key, ["key"] = f.Value.Key.Name, ["fake"] = f.Value.Fake.DeepClone() }).ToArray()), ["events"] = rows });
         _log($"宣言と実態のずれ：サーバー権威の項目 {fakes.Count} 個 × イベント {events.Count} 個（受け入れられた {findings.Count} 件）");
         return findings;
     }

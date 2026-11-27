@@ -73,9 +73,19 @@ public static class CalibrationCommands
         {
             var found = new List<Finding>();
             found.AddRange((await new BotPlayRunner(lab, run, CliContext.Log).RunAsync(games, 7, true, token).ConfigureAwait(false)).Findings);
-            if (args.Flag("phases"))
+            var stage1 = args.Flag("stage1");
+            if (args.Flag("phases") || stage1)
             {
                 found.AddRange(await new PhaseProber(lab, run, CliContext.Log).RunAsync(token).ConfigureAwait(false));
+            }
+
+            // --stage1：段階1の機械判定をすべて探索に入れる（custos stage1 と同じ。静的解析はアプリのリポジトリを見るので除く）。
+            // 以前は、ファジングで落ちる入力（クラッシュ系の校正用バグ）を探索しておらず、段階1なら見つかるものを見逃していた
+            if (stage1)
+            {
+                found.AddRange(await new AuthorityProber(lab, run, CliContext.Log).RunAsync(token).ConfigureAwait(false));
+                found.AddRange(await new SecurityProber(lab, run, CliContext.Log).RunAsync(token).ConfigureAwait(false));
+                found.AddRange(await new EventFuzzer(lab, run, 1, CliContext.Log).RunAsync([], 1, token).ConfigureAwait(false));
             }
             // 探索は基準と校正用バグごとに呼ぶので、試行の ID に回の番号を付ける（同じ実行の中で証拠のファイルがぶつからないように）
             round++;
