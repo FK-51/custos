@@ -25,6 +25,23 @@
     <RestoreLockedMode Condition="'$(CUSTOS_LOCKED_RESTORE)' == 'true'">true</RestoreLockedMode>
     <Deterministic>true</Deterministic>
 
+    <!--
+      部品のイメージは linux の x64 と arm64 で発行する（ImageBuilder が dotnet publish -r を使う）。両方を宣言しておき、
+      packages.lock.json がビルドしたマシンのアーキテクチャで書き換わらないようにする（2026-11-28 利用者が承認）。
+      アナライザーにも宣言する（dotnet publish -r の復元は参照先のプロジェクトにも RID を渡すので、宣言がないと最後に発行した RID の節ができる）
+    -->
+    <RuntimeIdentifiers>linux-x64;linux-arm64</RuntimeIdentifiers>
+
+    <!--
+      判定器のハッシュ（FrameworkInfo.JudgeHash。アセンブリの中身から計算する）が、コードが同じなら
+      コミットやビルドした場所に関係なく同じになるようにする：版にコミットのハッシュを入れず、ソースのパスを正規化し、
+      SourceLink（PDB にリポジトリの URL とコミットを書く）を使わない。PDB のチェックサムが DLL に入るので、
+      SourceLink があるとコミットやリモートの URL で DLL が変わる（2026-11-28 利用者が承認。実測で確かめた）
+    -->
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
+    <ContinuousIntegrationBuild>true</ContinuousIntegrationBuild>
+    <EnableSourceLink>false</EnableSourceLink>
+
     <Version>0.1.0</Version>
     <Authors>Custos</Authors>
     <Company>Custos</Company>
@@ -33,10 +50,13 @@
   </PropertyGroup>
 
   <!-- 禁止構文（dynamic、! 演算子、警告の抑止）を検出する自前のアナライザーを全プロジェクトに付ける -->
+  <!-- アナライザーはコンパイラ（ビルドするマシン）の中で動くので、発行先の RID（-r）を引き継がない。
+       引き継ぐと、x64 のマシンで arm64 向けに発行したときに、arm64 のアナライザーを読めずに失敗する -->
   <ItemGroup Condition="'$(MSBuildProjectName)' != 'Custos.Analyzers'">
     <ProjectReference Include="$(MSBuildThisFileDirectory)src/Custos.Analyzers/Custos.Analyzers.csproj"
                       OutputItemType="Analyzer"
                       ReferenceOutputAssembly="false"
-                      PrivateAssets="all" />
+                      PrivateAssets="all"
+                      GlobalPropertiesToRemove="RuntimeIdentifier;SelfContained" />
   </ItemGroup>
 </Project>
