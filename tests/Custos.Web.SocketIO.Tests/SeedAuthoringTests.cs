@@ -105,6 +105,42 @@ public sealed class SeedAuthoringTests : IDisposable
     }
 
     [Fact]
+    public void ConfirmIsBuiltFromTheDeterminismScenarioWhenPresent()
+    {
+        // 決定性の測定のシナリオ（準備の順序が決まり、返答の間を空ける）を写し、方針・シード・手数を変える
+        File.WriteAllText(Path.Combine(_workspace.VerifyRepo, "scenarios", "determinism.yaml"), string.Join('\n',
+            "# 決定性の測定",
+            "version: 1",
+            "name: determinism",
+            "steps:",
+            "  - include: { file: two-players-start.yaml }",
+            "  - bot: { users: [alice, bob], policy: first, seed: 1, max_moves: 12, think_ms: 300, timeout_ms: 90000 }",
+            "  - settle: { quiet_ms: 500 }",
+            ""));
+        var confirm = SeedAuthoring.Confirm(_workspace, 1007);
+        Assert.Contains("name: confirm-{id}", confirm, StringComparison.Ordinal);
+        Assert.Contains("include: { file: two-players-start.yaml }", confirm, StringComparison.Ordinal);
+        Assert.Contains("policy: random, seed: 1007, until: end, think_ms: 300, timeout_ms: 300000", confirm, StringComparison.Ordinal);
+        Assert.DoesNotContain("max_moves", confirm, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ExcludedMeasurementsAreNotCumulated()
+    {
+        var dir = Path.Combine(_workspace.DataDir, "calibration");
+        Directory.CreateDirectory(dir);
+        File.WriteAllLines(Path.Combine(dir, "verifier.jsonl"),
+        [
+            """{"agent":"scripted","all_total":3,"all_flagged":3,"missed_total":2,"missed_flagged":2,"excluded":true,"note":"x"}""",
+            """{"agent":"scripted","all_total":4,"all_flagged":1,"missed_total":2,"missed_flagged":0}""",
+        ]);
+        var c = VerifierSensitivity.Cumulative(_workspace, "scripted");
+        Assert.NotNull(c);
+        Assert.Equal(4, c.Value.AllTotal);
+        Assert.Equal(0, c.Value.Used);
+    }
+
+    [Fact]
     public void CumulativeSensitivityUsesTheLowerOfMissedAndAll()
     {
         var dir = Path.Combine(_workspace.DataDir, "calibration");

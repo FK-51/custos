@@ -113,8 +113,42 @@ public static class SeedAuthoring
     }
 
     /// <summary>
-    /// 確認用シナリオの雛形：検証用リポジトリの scenarios/bot-game.yaml（1対局。段階1のボットの対局と同じ）を写し、{game} と {seed} を埋める。
-    /// アプリごとの準備の手順を、フレームワークが知らずに済む。
+    /// 確認用シナリオの雛形。品質チェックはパッチなしの2回が一致するときだけ効き目を確かめるので、決定的なシナリオが要る。
+    /// 検証用リポジトリの scenarios/determinism.yaml（決定性の測定 B-4 のもの。準備の順序が決まり、ボットの返答の間を空ける）を写し、
+    /// ボットの方針を random、シードを seed、手数を最後まで（until: end）に変える。determinism.yaml がなければ bot-game.yaml から作る
+    /// （こちらは2人がほぼ同時に準備するので、先手が入れ替わり、比べられないことが多い）。
+    /// </summary>
+    public static string Confirm(Workspace workspace, int seed)
+    {
+        ArgumentNullException.ThrowIfNull(workspace);
+        var path = Path.Combine(workspace.VerifyRepo, "scenarios", "determinism.yaml");
+        if (!File.Exists(path))
+        {
+            return ConfirmFromBotGame(workspace, seed);
+        }
+
+        var lines = File.ReadAllLines(path).Where(l => !l.StartsWith('#')).Select(l =>
+        {
+            if (l.TrimStart().StartsWith("name:", StringComparison.Ordinal))
+            {
+                return "name: confirm-{id}";
+            }
+
+            if (!l.TrimStart().StartsWith("- bot:", StringComparison.Ordinal))
+            {
+                return l;
+            }
+
+            var bot = Regex.Replace(l, @"policy: *\w+", "policy: random", RegexOptions.None, TimeSpan.FromSeconds(1));
+            bot = Regex.Replace(bot, @"seed: *\d+", "seed: " + seed.ToString(CultureInfo.InvariantCulture), RegexOptions.None, TimeSpan.FromSeconds(1));
+            bot = Regex.Replace(bot, @"max_moves: *\d+", "until: end", RegexOptions.None, TimeSpan.FromSeconds(1));
+            return Regex.Replace(bot, @"timeout_ms: *\d+", "timeout_ms: 300000", RegexOptions.None, TimeSpan.FromSeconds(1));
+        });
+        return "# 確認用シナリオ（探索役には見せない）。決まった準備の後、1対局を最後まで回す\n" + string.Join('\n', lines) + "\n";
+    }
+
+    /// <summary>
+    /// 確認用シナリオの雛形（予備）：検証用リポジトリの scenarios/bot-game.yaml（1対局。段階1のボットの対局と同じ）を写し、{game} と {seed} を埋める。
     /// </summary>
     public static string ConfirmFromBotGame(Workspace workspace, int seed)
     {
@@ -234,7 +268,7 @@ public static class MutationSeedAuthor
                 var diff = await ProcessRunner.RunAsync("git", ["-C", tmp, "diff"], timeout: TimeSpan.FromMinutes(1), cancellationToken: cancellationToken).ConfigureAwait(false);
                 await File.WriteAllTextAsync(path, original, cancellationToken).ConfigureAwait(false);
                 var description = string.Create(CultureInfo.InvariantCulture, $"{site.File}:{site.Line + 1} の{site.Op.Description}を変えた（「{site.Before.Trim()}」→「{site.After.Trim()}」。機械的な変異）");
-                drafts.Add(new SeedDraft(site.Op.Kind, description, diff.StandardOutput, SeedAuthoring.ConfirmFromBotGame(workspace, 1000 + drafts.Count), false, "generated"));
+                drafts.Add(new SeedDraft(site.Op.Kind, description, diff.StandardOutput, SeedAuthoring.Confirm(workspace, 1000 + drafts.Count), false, "generated"));
             }
 
             return drafts;
@@ -293,7 +327,7 @@ public sealed class ClaudeSeedAuthor
         }
 
         Directory.CreateDirectory(outDir);
-        await File.WriteAllTextAsync(Path.Combine(outDir, "_template.yaml"), SeedAuthoring.ConfirmFromBotGame(_lab.Workspace, 1), cancellationToken).ConfigureAwait(false);
+        await File.WriteAllTextAsync(Path.Combine(outDir, "_template.yaml"), SeedAuthoring.Confirm(_lab.Workspace, 1), cancellationToken).ConfigureAwait(false);
         var transcript = Path.Combine(_run.Dir, "seed-author", "transcript.txt");
         var result = await launcher.RunAsync("seed_author", model, Prompt(count), ["Bash", "Read", "Edit", "Write", "Glob", "Grep"], null, Prompt(count), transcript, cancellationToken).ConfigureAwait(false);
         try

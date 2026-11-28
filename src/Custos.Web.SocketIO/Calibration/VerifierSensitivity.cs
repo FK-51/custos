@@ -19,8 +19,10 @@ public sealed record BlindVerdict(string Verdict, string Detail);
 /// </summary>
 public static class BlindVerifier
 {
-    /// <summary>判定する。</summary>
-    public static async Task<BlindVerdict> JudgeAsync(Lab.Lab lab, Run run, string agent, string recordsSession, long from, long? to, CancellationToken cancellationToken)
+    /// <summary>
+    /// 判定する。ignore に入っている所見（キー）は数えない（感度の測定で、パッチなしのビルドの証拠でも出る所見を除くため）。
+    /// </summary>
+    public static async Task<BlindVerdict> JudgeAsync(Lab.Lab lab, Run run, string agent, string recordsSession, long from, long? to, CancellationToken cancellationToken, IReadOnlySet<string>? ignore = null)
     {
         ArgumentNullException.ThrowIfNull(lab);
         if (agent == "claude-code")
@@ -30,12 +32,27 @@ public static class BlindVerifier
                 : new BlindVerdict("unknown", "Claude Code の検証役による判定し直しは、まだ代役と同じ証拠の形に対応していない");
         }
 
-        var sessionDir = Path.Combine(lab.Workspace.RecordsDir, recordsSession);
-        if (!Directory.Exists(sessionDir))
+        if (await FindingsAsync(lab, run, recordsSession, from, to, cancellationToken).ConfigureAwait(false) is not { } findings)
         {
             return new BlindVerdict("unknown", "証拠の記録が見つからない：" + recordsSession);
         }
 
+        return findings.FirstOrDefault(f => ignore == null || !ignore.Contains(f.Key)) is { Key: not null } hit
+            ? new BlindVerdict("bug", hit.Summary)
+            : new BlindVerdict("no_bug", ignore is { Count: > 0 } && findings.Count > 0 ? "パッチなしの証拠でも出る所見のほかに、問題は見つからなかった" : "証拠の記録を判定し直して、問題は見つからなかった");
+    }
+
+    /// <summary>代役の検証役が証拠から見つける所見（キーと説明）。記録がなければ null。</summary>
+    public static async Task<IReadOnlyList<(string Key, string Summary)>?> FindingsAsync(Lab.Lab lab, Run run, string recordsSession, long from, long? to, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(lab);
+        var sessionDir = Path.Combine(lab.Workspace.RecordsDir, recordsSession);
+        if (!Directory.Exists(sessionDir))
+        {
+            return null;
+        }
+
+        var found = new List<(string Key, string Summary)>();
         var store = new Records.RecordStore(sessionDir);
         using (var db = await RecordsDatabase.BuildAsync(lab, store, from, to, false, cancellationToken).ConfigureAwait(false))
         {
@@ -45,7 +62,7 @@ public static class BlindVerifier
                 {
                     if (db.Query(invariant.Query ?? string.Empty).Rows.Count > 0)
                     {
-                        return new BlindVerdict("bug", $"証拠の記録で不変条件 {invariant.Id} が破れている");
+                        found.Add(("invariant:" + invariant.Id, $"証拠の記録で不変条件 {invariant.Id} が破れている"));
                     }
                 }
                 catch (Microsoft.Data.Sqlite.SqliteException)
@@ -57,12 +74,8 @@ public static class BlindVerifier
         // 送ってよい項目（記録のセッションの中だけを見る）
         var baseline = await JudgeContext.CaptureAsync(lab, cancellationToken).ConfigureAwait(false);
         var schema = await new SentSchemaJudge(store).JudgeAsync(new JudgeContext(lab, run, baseline), cancellationToken).ConfigureAwait(false);
-        if (schema.Findings.FirstOrDefault(f => f.Category != "coverage") is { } leak)
-        {
-            return new BlindVerdict("bug", leak.Summary);
-        }
-
-        return new BlindVerdict("no_bug", "証拠の記録を判定し直して、問題は見つからなかった");
+        found.AddRange(schema.Findings.Where(f => f.Category != "coverage").Select(f => ("schema:" + f.Fingerprint, f.Summary)));
+        return found;
     }
 }
 
@@ -93,6 +106,17 @@ public static class VerifierSensitivity
     {
         ArgumentNullException.ThrowIfNull(lab);
         ArgumentNullException.ThrowIfNull(log);
+        // 基準（パッチなし）の証拠でも出る所見は、校正用バグの指摘に数えない（検証役が何にでも「誤り」と言うと、感度が見かけだけ高くなる）
+        var basePath = Path.Combine(calibrationDir, "calibration", "base.json");
+        if (!File.Exists(basePath) || (JsonNode.Parse(await File.ReadAllTextAsync(basePath, cancellationToken).ConfigureAwait(false)) as JsonObject)?["evidence"] is not JsonObject baseEvidence
+            || baseEvidence["session"]?.ToString() is not { } baseSession)
+        {
+            throw new CustosException("この校正には基準（パッチなし）の証拠の場所がありません（この版より前の校正）。calibrate をやり直してください");
+        }
+
+        var ignore = (await BlindVerifier.FindingsAsync(lab, run, baseSession, baseEvidence["from"]?.GetValue<long>() ?? 0, baseEvidence["to"]?.GetValue<long?>(), cancellationToken).ConfigureAwait(false) ?? [])
+            .Select(f => f.Key).ToHashSet(StringComparer.Ordinal);
+        log($"基準（パッチなし）の証拠で出る所見：{ignore.Count} 種類（校正用バグの指摘に数えない）");
         var rows = new List<JsonObject>();
         int allTotal = 0, allFlagged = 0, missedTotal = 0, missedFlagged = 0;
         foreach (var file in Directory.GetFiles(Path.Combine(calibrationDir, "calibration"), "seed-*.json").Order(StringComparer.Ordinal))
@@ -106,7 +130,7 @@ public static class VerifierSensitivity
             }
 
             var detected = node["detected"]?.GetValue<bool>() == true;
-            var verdict = await BlindVerifier.JudgeAsync(lab, run, agent, session, evidence["from"]?.GetValue<long>() ?? 0, evidence["to"]?.GetValue<long?>(), cancellationToken).ConfigureAwait(false);
+            var verdict = await BlindVerifier.JudgeAsync(lab, run, agent, session, evidence["from"]?.GetValue<long>() ?? 0, evidence["to"]?.GetValue<long?>(), cancellationToken, ignore).ConfigureAwait(false);
             rows.Add(new JsonObject { ["seed"] = seed, ["explore_detected"] = detected, ["verdict"] = verdict.Verdict, ["detail"] = verdict.Detail });
             log($"{seed}（探索で{(detected ? "見つかった" : "見落とした")}）：検証役 {verdict.Verdict}（{verdict.Detail}）");
             if (verdict.Verdict == "unknown")
@@ -149,7 +173,9 @@ public static class VerifierSensitivity
         }
 
         int allTotal = 0, allFlagged = 0, missedTotal = 0, missedFlagged = 0;
-        foreach (var node in File.ReadAllLines(path).Where(l => l.Trim().Length > 0).Select(l => JsonNode.Parse(l)).OfType<JsonNode>().Where(n => n["agent"]?.ToString() == agent))
+        // excluded：後から測り方の誤りが分かった測定（note に理由）。数えない
+        foreach (var node in File.ReadAllLines(path).Where(l => l.Trim().Length > 0).Select(l => JsonNode.Parse(l)).OfType<JsonNode>()
+            .Where(n => n["agent"]?.ToString() == agent && n["excluded"]?.GetValue<bool>() != true))
         {
             allTotal += node["all_total"]?.GetValue<int>() ?? 0;
             allFlagged += node["all_flagged"]?.GetValue<int>() ?? 0;

@@ -322,9 +322,14 @@ public sealed class Calibrator
         ArgumentNullException.ThrowIfNull(checks);
         ArgumentNullException.ThrowIfNull(explore);
 
-        // 基準（パッチなし）での探索の結果
+        // 基準（パッチなし）での探索の結果。証拠の場所も残す（検証役の感度の測定で、パッチなしでも出る所見を除くため。第21.2節）
         await _lab.UpAsync(new UpOptions("test", new HashSet<string>(StringComparer.Ordinal), null, false, false), cancellationToken).ConfigureAwait(false);
+        var baseFrom = _lab.Records.Activity().LastSeq;
         var baseFindings = (await explore(cancellationToken).ConfigureAwait(false)).Select(f => f.Fingerprint).ToHashSet(StringComparer.Ordinal);
+        _run.WriteJson("calibration/base.json", new JsonObject
+        {
+            ["evidence"] = new JsonObject { ["session"] = Path.GetFileName(_lab.Records.Dir), ["from"] = baseFrom, ["to"] = _lab.Records.Activity().LastSeq },
+        });
 
         // クラッシュ系は他のバグと同じビルドに入れない（第19.6節）。1件ずつ校正用ビルドを作る
         var detected = new List<string>();

@@ -143,46 +143,69 @@ public static class CalibrationCommands
         async Task<IReadOnlyList<Finding>> ExploreAsync(CancellationToken token)
         {
             var found = new List<Finding>();
-            found.AddRange((await new BotPlayRunner(lab, run, CliContext.Log).RunAsync(games, 7, true, token).ConfigureAwait(false)).Findings);
+
+            // 探索の手順が失敗しても（校正用バグで準備のシナリオが通らない、など）校正を止めず、失敗を所見として残す。
+            // パッチなし（基準）でも同じ手順が失敗していれば、指紋が同じなので校正用バグの検出には数えない
+            async Task Step(string name, Func<Task<IEnumerable<Finding>>> body)
+            {
+                try
+                {
+                    found.AddRange(await body().ConfigureAwait(false));
+                }
+                catch (Exception e) when (e is CustosException or TimeoutException or IOException)
+                {
+                    found.Add(Finding.Create("calibrate", "explore_step_failed", Severity.Medium, 2, "exploration", $"探索の手順「{name}」が失敗した：{e.Message}", null, [], name));
+                }
+            }
+
+            await Step("ボットの対局", async () => (await new BotPlayRunner(lab, run, CliContext.Log).RunAsync(games, 7, true, token).ConfigureAwait(false)).Findings).ConfigureAwait(false);
             var stage1 = args.Flag("stage1");
             if (stage1)
             {
                 // 参照モデル（あれば）でボットの対局の手のログを確かめる。局面の検査などがリセットして手のログを消す前に行う
-                found.AddRange((await new Custos.Web.SocketIO.Repro.ReferenceHarness(lab, run, CliContext.Log).RunAsync(null, token).ConfigureAwait(false)).Findings);
+                await Step("参照モデルとの照合", async () => (await new Custos.Web.SocketIO.Repro.ReferenceHarness(lab, run, CliContext.Log).RunAsync(null, token).ConfigureAwait(false)).Findings).ConfigureAwait(false);
             }
 
             if (args.Flag("phases") || stage1)
             {
-                found.AddRange(await new PhaseProber(lab, run, CliContext.Log).RunAsync(token).ConfigureAwait(false));
+                await Step("局面の検査", async () => await new PhaseProber(lab, run, CliContext.Log).RunAsync(token).ConfigureAwait(false)).ConfigureAwait(false);
             }
 
             // --stage1：段階1の機械判定をすべて探索に入れる（custos stage1 と同じ。静的解析はアプリのリポジトリを見るので除く）。
             // 以前は、ファジングで落ちる入力（クラッシュ系の校正用バグ）を探索しておらず、段階1なら見つかるものを見逃していた
             if (stage1)
             {
-                found.AddRange(await new AuthorityProber(lab, run, CliContext.Log).RunAsync(token).ConfigureAwait(false));
-                found.AddRange(await new SecurityProber(lab, run, CliContext.Log).RunAsync(token).ConfigureAwait(false));
-                found.AddRange(await new EventFuzzer(lab, run, 1, CliContext.Log).RunAsync([], 1, token).ConfigureAwait(false));
+                await Step("宣言と実態のずれの検査", async () => await new AuthorityProber(lab, run, CliContext.Log).RunAsync(token).ConfigureAwait(false)).ConfigureAwait(false);
+                await Step("隠し情報となりすましの検査", async () => await new SecurityProber(lab, run, CliContext.Log).RunAsync(token).ConfigureAwait(false)).ConfigureAwait(false);
+                await Step("ファジング", async () => await new EventFuzzer(lab, run, 1, CliContext.Log).RunAsync([], 1, token).ConfigureAwait(false)).ConfigureAwait(false);
             }
-            // 探索は基準と校正用バグごとに呼ぶので、試行の ID に回の番号を付ける（同じ実行の中で証拠のファイルがぶつからないように）
-            round++;
+
             if (args.Get("agent") is "scripted" or "claude-code")
             {
-                var definition = LedgerDefinition.Load(context.Workspace, context.Config);
-                var ledger = LedgerStore.Build(definition, null);
-                IExplorer explorer = args.Get("agent") == "claude-code" ? new ClaudeCodeExplorer(lab, run, "explorer", context.Config.Agents?.Roles.GetValueOrDefault("explorer")?.Model) : new ScriptedExplorer(lab, run, CliContext.Log);
-                var index = 0;
-                foreach (var entry in ledger.Where(e => e.Kind == "card" && e.Situation == "normal").Take((int)args.Number("targets", 3)))
+                await Step("探索役", async () =>
                 {
-                    // 台帳は1枚のカードに観点（効果の結果、相手の見え方）ごとの項目があり、対象（カードの番号）だけでは一意にならない
-                    index++;
-                    var trialId = string.Create(CultureInfo.InvariantCulture, $"K{round:D2}-{index:D2}");
-                    var report = await explorer.ExploreAsync(entry, trialId, 11, token).ConfigureAwait(false);
-                    if (report.Result == "bug")
+                    var reports = new List<Finding>();
+                    var definition = LedgerDefinition.Load(context.Workspace, context.Config);
+                    var ledger = LedgerStore.Build(definition, null);
+                    IExplorer explorer = args.Get("agent") == "claude-code" ? new ClaudeCodeExplorer(lab, run, "explorer", context.Config.Agents?.Roles.GetValueOrDefault("explorer")?.Model) : new ScriptedExplorer(lab, run, CliContext.Log);
+
+                    // 探索は基準と校正用バグごとに呼ぶので、試行の ID に回の番号を付ける（同じ実行の中で証拠のファイルがぶつからないように）
+                    round++;
+                    var index = 0;
+                    foreach (var entry in ledger.Where(e => e.Kind == "card" && e.Situation == "normal").Take((int)args.Number("targets", 3)))
                     {
-                        found.Add(Finding.Create("explorer", "report_bug", Severity.High, 3, "exploration", report.Notes, null, [], entry.Id));
+                        // 台帳は1枚のカードに観点（効果の結果、相手の見え方）ごとの項目があり、対象（カードの番号）だけでは一意にならない
+                        index++;
+                        var trialId = string.Create(CultureInfo.InvariantCulture, $"K{round:D2}-{index:D2}");
+                        var report = await explorer.ExploreAsync(entry, trialId, 11, token).ConfigureAwait(false);
+                        if (report.Result == "bug")
+                        {
+                            reports.Add(Finding.Create("explorer", "report_bug", Severity.High, 3, "exploration", report.Notes, null, [], entry.Id));
+                        }
                     }
-                }
+
+                    return reports;
+                }).ConfigureAwait(false);
             }
 
             return found;
