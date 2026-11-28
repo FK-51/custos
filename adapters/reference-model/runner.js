@@ -25,6 +25,10 @@
 //   取り込み（追従）、その区間を「未検証」と記録する。
 //
 // state はログの状態の写し（stateSnapshotJson）と同じ形。action はログの1行（seq、type、player、changes）。
+//
+// どちらの形でも、任意で begin({ game, prompts }) を持てる。対局の手を読む前に1回呼ぶ。prompts は、その対局で各プレイヤーに
+// 送られた選択の要求の列（届いた順。{ seq, turn_number, kind, choices }）。手のログには「何枚から選ばせたか」が残らないので、
+// 提示された選択肢の数や中身を規則と比べるときに使う（設計書 第25.9節「打てる手の列挙」）。
 const ref = require(process.env.CUSTOS_REF_MODEL || '/ref/model.js');
 
 function diff(a, b, path, out) {
@@ -123,7 +127,10 @@ function runStepper(g) {
 
 function run(games) {
   const checker = typeof ref.check === 'function' && typeof ref.apply === 'function';
-  return games.map((g) => (checker ? runChecker(g) : runStepper(g)));
+  return games.map((g) => {
+    if (typeof ref.begin === 'function') ref.begin({ game: g.game, prompts: clone(g.prompts || []) });
+    return checker ? runChecker(g) : runStepper(g);
+  });
 }
 
 module.exports = { run, diff };

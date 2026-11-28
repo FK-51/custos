@@ -87,3 +87,14 @@ test('状態を計算する形：写しと比べ、対応していない区間�
   assert.deepEqual(g.mismatches.map((m) => m.seq), [3]);
   assert.equal(g.unverified_spans, 1);
 });
+
+test('begin に、対局ごとの提示された選択肢が渡る', () => {
+  const g = run('prompt-model.js', [
+    {
+      game: 'g4',
+      prompts: [{ seq: 10, turn_number: 1, kind: 'draw', choices: [3, 5] }],
+      actions: [action(0, 'start', [], { n: 0 }), action(1, 'move', [{ type: 'ADD', by: 1 }])],
+    },
+  ]).results[0];
+  assert.deepEqual(g.violations.map((v) => v.rule), ['prompt_seen:g4:draw:2']);
+});

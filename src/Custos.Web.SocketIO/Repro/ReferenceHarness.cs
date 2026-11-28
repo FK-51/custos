@@ -27,6 +27,55 @@ public sealed class ReferenceHarness
         _log = log;
     }
 
+    /// <summary>
+    /// 対局ごとの、提示された選択肢の列（{ seq, turn_number, kind, choices }。届いた順）。
+    /// 選択の要求のイベントと項目の位置は rules/replay.yaml の prompts で指定する（なければ渡さない）。
+    /// 対局と要求は部屋の ID で結び付ける（同じ部屋に対局が2つ以上あるときは、どの対局の要求か分からないので渡さない）。
+    /// </summary>
+    private async Task<Dictionary<string, JsonArray>> PromptsByGameAsync(JsonObject? config, IEnumerable<string> gameIds, CancellationToken cancellationToken)
+    {
+        var result = new Dictionary<string, JsonArray>(StringComparer.Ordinal);
+        if (config?["prompts"] is not JsonObject spec || spec["event"]?.ToString() is not { } eventName)
+        {
+            return result;
+        }
+
+        var sessions = await _lab.QueryAsync(spec["session_sql"]?.ToString() ?? "SELECT id, roomId FROM GameSession", cancellationToken).ConfigureAwait(false);
+        var gamesByRoom = (sessions["rows"] as JsonArray ?? []).OfType<JsonArray>()
+            .Select(r => (Game: r[0]?.ToString() ?? string.Empty, Room: r[1]?.ToString() ?? string.Empty))
+            .Where(r => gameIds.Contains(r.Game, StringComparer.Ordinal))
+            .GroupBy(r => r.Room, StringComparer.Ordinal)
+            .Where(g => g.Count() == 1)
+            .ToDictionary(g => g.Key, g => g.First().Game, StringComparer.Ordinal);
+        string? Text(JsonNode? payload, string key) => spec[key]?.ToString() is { } path ? FirstOf(Json.SelectPath(payload, path))?.ToString() : null;
+        foreach (var entry in _lab.Records.Events(0, "s2c", eventName))
+        {
+            var payload = entry.Args is JsonArray args && args.Count > 0 ? args[0] : null;
+            if (Text(payload, "room_path") is not { } room || !gamesByRoom.TryGetValue(room, out var gameId))
+            {
+                continue;
+            }
+
+            if (!result.TryGetValue(gameId, out var list))
+            {
+                list = [];
+                result[gameId] = list;
+            }
+
+            list.Add(new JsonObject
+            {
+                ["seq"] = entry.Seq,
+                ["turn_number"] = int.TryParse(Text(payload, "turn_number_path"), out var turn) ? turn : null,
+                ["kind"] = Text(payload, "kind_path"),
+                ["choices"] = spec["choices_path"]?.ToString() is { } choicesPath ? FirstOf(Json.SelectPath(payload, choicesPath))?.DeepClone() : null,
+            });
+        }
+
+        return result;
+    }
+
+    private static JsonNode? FirstOf(IReadOnlyList<JsonNode?> nodes) => nodes.Count > 0 ? nodes[0] : null;
+
     /// <summary>実行する。</summary>
     public async Task<(JsonObject Summary, IReadOnlyList<Finding> Findings)> RunAsync(string? game, CancellationToken cancellationToken)
     {
@@ -59,7 +108,10 @@ public sealed class ReferenceHarness
             list.Add(new JsonObject { ["seq"] = row[1]?.DeepClone(), ["type"] = row[2]?.DeepClone(), ["player"] = row[3]?.DeepClone(), ["changes"] = row[4]?.DeepClone(), ["snapshot"] = row[5]?.DeepClone() });
         }
 
-        var input = new JsonObject { ["games"] = new JsonArray(games.Select(g => (JsonNode?)new JsonObject { ["game"] = g.Key, ["actions"] = g.Value }).ToArray()) };
+        // 提示された選択肢（設計書 第25.9節「打てる手の列挙」と比べるため）：対局の部屋で各プレイヤーに送られた選択の要求を、届いた順に渡す。
+        // 手のログには、何枚から選ばせたかが残らない（選んだ1枚だけ）ので、候補の数の誤りは手のログだけでは見えない
+        var prompts = await PromptsByGameAsync(config, games.Keys, cancellationToken).ConfigureAwait(false);
+        var input = new JsonObject { ["games"] = new JsonArray(games.Select(g => (JsonNode?)new JsonObject { ["game"] = g.Key, ["actions"] = g.Value, ["prompts"] = prompts.GetValueOrDefault(g.Key) ?? [] }).ToArray()) };
         var node = new Lab.ImageBuilder(_lab.Workspace, _lab.Docker, _log).BaseImages()["node"];
         // コンテナに渡すのは、データの置き場所に写した実行器（フレームワークのリポジトリは、コンテナの実行環境から見えるとは限らない）
         var harness = Path.Combine(_lab.Workspace.DataDir, "tmp", "reference-harness");
