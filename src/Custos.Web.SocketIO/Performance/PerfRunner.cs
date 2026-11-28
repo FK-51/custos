@@ -63,6 +63,14 @@ public sealed record Measurement(
 /// </summary>
 public static class PerfRunner
 {
+    /// <summary>
+    /// 適合テスト F-2〜F-4 の1回の計測の大きさ（perf run の既定と同じ）。以前は4局（2局ずつ同時）で、99パーセンタイルが数十手の最大値とほぼ同じになり、
+    /// 同じ条件でも変動係数が 22 % になって F-4 が不合格になっていた（F-3 の「同じビルド同士」も変化 −21 % で、かろうじて差なしだった）。
+    /// </summary>
+    private const int ConformanceGames = 20;
+
+    private const int ConformanceConcurrency = 5;
+
     /// <summary>負荷をかけて1回計測する。</summary>
     public static async Task<Measurement> MeasureAsync(Lab.Lab lab, int games, int concurrency, int seed, CancellationToken cancellationToken)
     {
@@ -228,11 +236,11 @@ public static class PerfRunner
         var container = Containers.Client(lab.Project, 1);
         var inspect = await lab.Docker.InspectAsync(container, cancellationToken).ConfigureAwait(false);
         var original = inspect?["HostConfig"]?["CpusetCpus"]?.GetValue<string>() ?? string.Empty;
-        var normal = await SeriesAsync(lab, 3, 4, 2, 11, run, "headroom-normal", cancellationToken).ConfigureAwait(false);
+        var normal = await SeriesAsync(lab, 3, ConformanceGames, ConformanceConcurrency, 11, run, "headroom-normal", cancellationToken).ConfigureAwait(false);
         var cpus = await lab.Docker.RunCheckedAsync(["info", "--format", "{{.NCPU}}"], "docker info", TimeSpan.FromSeconds(20), cancellationToken).ConfigureAwait(false);
         var all = int.Parse(cpus.Trim(), CultureInfo.InvariantCulture);
         await lab.Docker.RunAsync(["update", "--cpuset-cpus", $"0-{all - 1}", container], TimeSpan.FromSeconds(30), cancellationToken: cancellationToken).ConfigureAwait(false);
-        var doubled = await SeriesAsync(lab, 3, 4, 2, 11, run, "headroom-doubled", cancellationToken).ConfigureAwait(false);
+        var doubled = await SeriesAsync(lab, 3, ConformanceGames, ConformanceConcurrency, 11, run, "headroom-doubled", cancellationToken).ConfigureAwait(false);
         await lab.Docker.RunAsync(["update", "--cpuset-cpus", string.IsNullOrEmpty(original) ? $"0-{all - 1}" : original, container], TimeSpan.FromSeconds(30), cancellationToken: cancellationToken).ConfigureAwait(false);
         var a = normal.Valid.Select(m => m.P99Ms).ToList();
         var b = doubled.Valid.Select(m => m.P99Ms).ToList();
@@ -253,13 +261,13 @@ public static class PerfRunner
     {
         ArgumentNullException.ThrowIfNull(lab);
         var runs = 5;
-        var baseline = await SeriesAsync(lab, runs, 4, 2, 21, run, "negative-a", cancellationToken).ConfigureAwait(false);
-        var same = await SeriesAsync(lab, runs, 4, 2, 21, run, "negative-b", cancellationToken).ConfigureAwait(false);
+        var baseline = await SeriesAsync(lab, runs, ConformanceGames, ConformanceConcurrency, 21, run, "negative-a", cancellationToken).ConfigureAwait(false);
+        var same = await SeriesAsync(lab, runs, ConformanceGames, ConformanceConcurrency, 21, run, "negative-b", cancellationToken).ConfigureAwait(false);
         var rules = lab.ReadRules();
         rules["rules"] = new JsonArray(new JsonObject { ["name"] = "perf-canary-delay", ["action"] = "delay", ["ms"] = 120, ["match"] = new JsonObject { ["event"] = "*", ["dir"] = "s2c" } });
         await lab.WriteRulesAsync(rules).ConfigureAwait(false);
         await Task.Delay(800, cancellationToken).ConfigureAwait(false);
-        var canary = await SeriesAsync(lab, runs, 4, 2, 21, run, "positive-canary", cancellationToken).ConfigureAwait(false);
+        var canary = await SeriesAsync(lab, runs, ConformanceGames, ConformanceConcurrency, 21, run, "positive-canary", cancellationToken).ConfigureAwait(false);
         rules["rules"] = new JsonArray();
         await lab.WriteRulesAsync(rules).ConfigureAwait(false);
         var detect = Detectable(lab);
@@ -281,7 +289,7 @@ public static class PerfRunner
     {
         ArgumentNullException.ThrowIfNull(lab);
         var profile = lab.Config.Environment.ResourceProfiles[lab.State.Profile ?? string.Empty];
-        var series = await SeriesAsync(lab, profile.Validity.Runs, 4, 2, 31, run, "variance", cancellationToken).ConfigureAwait(false);
+        var series = await SeriesAsync(lab, profile.Validity.Runs, ConformanceGames, ConformanceConcurrency, 31, run, "variance", cancellationToken).ConfigureAwait(false);
         var values = series.Valid.Select(m => m.P99Ms).ToList();
         var verdict = MeasurementValidity.EvaluateSeries(values, profile.Validity);
         return new JsonObject

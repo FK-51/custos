@@ -202,7 +202,17 @@ public sealed class SeedChecker
                 continue;
             }
 
-            await _lab.UpAsync(new UpOptions("test", new HashSet<string>(StringComparer.Ordinal), null, false, false, clone), cancellationToken).ConfigureAwait(false);
+            try
+            {
+                await _lab.UpAsync(new UpOptions("test", new HashSet<string>(StringComparer.Ordinal), null, false, false, clone), cancellationToken).ConfigureAwait(false);
+            }
+            catch (CustosException e)
+            {
+                // パッチは当たるが、校正用ビルドが作れない（機械的な変異で型が合わなくなった、など）。この校正用バグだけを外して続ける
+                results.Add(new SeedCheckResult(seed.Id, true, false, false, "-", "-", "校正用ビルドを作れない：" + e.Message[..Math.Min(300, e.Message.Length)]));
+                _log($"{seed.Id}：校正用ビルドを作れない（外して続けます）");
+                continue;
+            }
 
             // 自明すぎないか：起動直後に何もしないで判定する
             await _lab.ResetAsync("initial", false, cancellationToken).ConfigureAwait(false);
@@ -322,13 +332,17 @@ public sealed class Calibrator
         {
             var clone = await SeedStore.PrepareCloneAsync(_lab.Workspace, [seed], "calib-" + seed.Id, cancellationToken).ConfigureAwait(false);
             await _lab.UpAsync(new UpOptions("test", new HashSet<string>(StringComparer.Ordinal), null, false, false, clone), cancellationToken).ConfigureAwait(false);
+            var evidenceFrom = _lab.Records.Activity().LastSeq;
             var found = await explore(cancellationToken).ConfigureAwait(false);
             var onlyPatched = found.Where(f => !baseFindings.Contains(f.Fingerprint) && f.Category != "coverage").ToList();
+
+            // 証拠：この校正用バグのビルドで探索した間の通信の記録（検証役の感度の測定で、結論を伏せて検証役に見せる。第21.2節）
             _run.WriteJson($"calibration/{seed.Id}.json", new JsonObject
             {
                 ["seed"] = seed.Id,
                 ["detected"] = onlyPatched.Count > 0,
                 ["findings"] = new JsonArray(onlyPatched.Select(f => (JsonNode?)JsonValue.Create(f.Summary)).ToArray()),
+                ["evidence"] = new JsonObject { ["session"] = Path.GetFileName(_lab.Records.Dir), ["from"] = evidenceFrom, ["to"] = _lab.Records.Activity().LastSeq },
             });
             if (onlyPatched.Count > 0)
             {

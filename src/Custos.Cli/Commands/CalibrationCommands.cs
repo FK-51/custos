@@ -45,6 +45,82 @@ public static class CalibrationCommands
         return results.All(r => r.Usable) ? 0 : 1;
     }
 
+    /// <summary>
+    /// custos seeds author [--agent scripted|claude-code] [--count N] [--seed S] [--paths p1,p2]：シード作成役（第19.8節）。
+    /// 作った下書きを確かめ（アプリの HEAD に当たる、目印がない、書式どおり）、使えるものを次の ID で seeds/ に置く。
+    /// 効いているか、自明すぎないか、層は、この後の custos seeds check で決める。
+    /// </summary>
+    public static async Task<int> SeedsAuthorAsync(CliContext context, CliArgs args, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(args);
+        var agent = args.Get("agent") ?? "scripted";
+        var count = (int)args.Number("count", 10);
+        var run = context.Results.Begin("seeds-author", context.Config.Hash, context.Config.FileHashes, new Dictionary<string, string>(StringComparer.Ordinal) { ["agent"] = agent });
+        IReadOnlyList<SeedDraft> drafts = agent == "claude-code"
+            ? await new ClaudeSeedAuthor(context.Lab, run).RunAsync(count, context.Config.Agents?.Roles.GetValueOrDefault("seed_author")?.Model, cancellationToken).ConfigureAwait(false)
+            : await MutationSeedAuthor.GenerateAsync(context.Workspace, context.Workspace.AppRepo, count, (int)args.Number("seed", 1), (args.Get("paths") ?? string.Empty).Split(',', StringSplitOptions.TrimEntries), cancellationToken).ConfigureAwait(false);
+        var checks = await SeedAuthoring.CheckAsync(context.Workspace.AppRepo, drafts, cancellationToken).ConfigureAwait(false);
+        var ids = SeedAuthoring.Save(context.Workspace, checks.Where(c => c.Ok).Select(c => c.Draft));
+        var text = new StringBuilder();
+        text.AppendLine(CultureInfo.InvariantCulture, $"シード作成役（{agent}）：下書き {drafts.Count} 件、使える {ids.Count} 件を seeds/ に置いた（{string.Join(", ", ids)}）。次に custos seeds check --seeds {string.Join(",", ids)} で品質を確かめる");
+        text.AppendLine();
+        text.AppendLine("| 結果 | 種類 | 説明・理由 |");
+        text.AppendLine("|---|---|---|");
+        var saved = 0;
+        foreach (var check in checks)
+        {
+            var label = check.Ok ? ids[saved++] : "外した";
+            text.AppendLine(CultureInfo.InvariantCulture, $"| {label} | {check.Draft.Kind} | {(check.Ok ? check.Draft.Description : check.Detail).Replace("|", "\\|", StringComparison.Ordinal)} |");
+        }
+
+        run.WriteText("seeds-author.md", text.ToString());
+        run.WriteJson("seeds-author.json", checks.Select(c => new { c.Draft.Kind, c.Draft.Description, c.Ok, c.Detail }).ToList());
+        run.Seal(ids.Count > 0 ? "passed" : "failed");
+        CliContext.Out(text.ToString());
+        return ids.Count > 0 ? 0 : 1;
+    }
+
+    /// <summary>
+    /// custos verifier measure [--calibration &lt;ID&gt;] [--agent scripted|claude-code]：検証役の感度の測定（第21.2節）。
+    /// 校正（省くと最新の calibrate）の各校正用バグの証拠を、結論を伏せて検証役に判定させる。結果は data/calibration/verifier.jsonl に累積し、
+    /// 抜き取り検証（sample）と成熟度が使う。
+    /// </summary>
+    public static async Task<int> VerifierMeasureAsync(CliContext context, CliArgs args, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(args);
+        var runs = Path.Combine(context.Workspace.ResultsDir, "runs");
+        var calibration = (args.Get("calibration") is { } id
+                ? Directory.GetDirectories(runs, id + "*").FirstOrDefault()
+                : Directory.GetDirectories(runs, "*-calibrate").Where(d => Directory.Exists(Path.Combine(d, "calibration"))).OrderDescending(StringComparer.Ordinal).FirstOrDefault())
+            ?? throw new CustosException("校正の結果がありません（custos calibrate を先に実行してください）");
+        var agent = args.Get("agent") ?? "scripted";
+        var run = context.Results.Begin("verifier-measure", context.Config.Hash, context.Config.FileHashes, new Dictionary<string, string>(StringComparer.Ordinal) { ["agent"] = agent, ["calibration"] = Path.GetFileName(calibration) });
+        var measurement = await VerifierSensitivity.MeasureAsync(context.Lab, run, calibration, agent, CliContext.Log, cancellationToken).ConfigureAwait(false);
+        run.WriteJson("verifier.json", measurement);
+        var cumulative = VerifierSensitivity.Cumulative(context.Workspace, agent);
+        var text = new StringBuilder();
+        text.AppendLine(CultureInfo.InvariantCulture, $"# 検証役の感度（{Path.GetFileName(calibration)} の証拠）");
+        text.AppendLine();
+        text.AppendLine(VerifierSensitivity.Describe(measurement));
+        text.AppendLine(cumulative is { } c
+            ? string.Create(CultureInfo.InvariantCulture, $"累積（{agent}）：使う感度（95% 信頼区間の下限の低い方）{c.Used:P0}（見落としたもの {c.MissedTotal} 件で {(c.Missed is { } m ? m.ToString("P0", CultureInfo.InvariantCulture) : "-")}、すべて {c.AllTotal} 件で {(c.All is { } a ? a.ToString("P0", CultureInfo.InvariantCulture) : "-")}）。基準 {VerifierSensitivity.Threshold:P0}{(c.Used < VerifierSensitivity.Threshold ? "を下回る：この検証役での抜き取りは当てにならない（人間の担当にする。第21.3節）" : " 以上")}")
+            : "判定できた証拠がない（感度は出せない）");
+        text.AppendLine();
+        text.AppendLine("| 校正用バグ | 探索 | 検証役 | 理由 |");
+        text.AppendLine("|---|---|---|---|");
+        foreach (var row in measurement.Rows)
+        {
+            text.AppendLine(CultureInfo.InvariantCulture, $"| {row["seed"]} | {(row["explore_detected"]?.GetValue<bool>() == true ? "見つかった" : row["explore_detected"] == null ? "-" : "見落とした")} | {row["verdict"]} | {row["detail"]?.ToString().Replace("|", "\\|", StringComparison.Ordinal)} |");
+        }
+
+        run.WriteText("verifier.md", text.ToString());
+        run.Seal(measurement.AllTotal > 0 ? "passed" : "failed");
+        CliContext.Out(text.ToString());
+        return measurement.AllTotal > 0 ? 0 : 1;
+    }
+
     /// <summary>custos calibrate：校正を実行する（検出率の測定。第7章）。</summary>
     public static async Task<int> CalibrateAsync(CliContext context, CliArgs args, CancellationToken cancellationToken)
     {
@@ -195,64 +271,32 @@ public static class CalibrationCommands
         var sampling = context.Config.Sampling;
         var confidence = sampling?.Confidence ?? 0.95;
 
-        // 検証役の感度：校正の結果があればそれを使う。なければ、機械判定に寄せた代役の感度は「機械判定で見える誤りだけ」なので、上限の計算には使わず未確認とする
+        // 検証役の感度：--sensitivity がなければ、測った値（custos verifier measure の累積。95% 信頼区間の下限）を使う（第21.2〜21.3節）
         var verifierAgent = args.Get("agent") ?? "scripted";
         double? sensitivity = args.Get("sensitivity") is { } s ? double.Parse(s, CultureInfo.InvariantCulture) : null;
+        var measured = sensitivity == null ? VerifierSensitivity.Cumulative(context.Workspace, verifierAgent) : null;
+        sensitivity ??= measured?.Used;
         var rows = new JsonArray();
         var errors = 0;
         foreach (var entry in sample)
         {
-            // ブラインド判定：元の結論を伏せ、証拠（通信の記録）だけで、機械判定をやり直す（代役）
+            // ブラインド判定：元の結論を伏せ、証拠（そのレポートのセッションと範囲の通信の記録）だけで判定し直す
             var trial = entry.Reports.Count > 0 ? entry.Reports[^1] : null;
-            var verdict = "no_bug";
-            var detail = "証拠の記録を判定し直して、問題は見つからなかった";
             var reportPath = trial == null ? null : FindReport(context.Workspace.ResultsDir, trial);
-            if (reportPath == null)
-            {
-                verdict = "unknown";
-                detail = "レポートが見つからない";
-            }
-            else if (verifierAgent == "claude-code" && new ClaudeCodeLauncher(context.Lab).Unavailable() is { } reason)
-            {
-                verdict = "unknown";
-                detail = "検証役（Claude Code）を起動できない：" + reason;
-            }
-            else
-            {
-                var report = System.Text.Json.JsonSerializer.Deserialize<TrialReport>(await File.ReadAllTextAsync(reportPath, cancellationToken).ConfigureAwait(false), Json.Options);
-                if (report != null && Directory.Exists(Path.Combine(context.Workspace.RecordsDir, report.RecordsSession)))
-                {
-                    // そのレポートのセッションと範囲の記録だけで判定し直す（以前は、いまの検証環境の記録を report.RecordsFrom から最後まで
-                    // 読んでいて、別の日のカナリアの違反まで「誤り」と判定していた）
-                    var store = new Custos.Web.SocketIO.Records.RecordStore(Path.Combine(context.Workspace.RecordsDir, report.RecordsSession));
-                    using var db = await RecordsDatabase.BuildAsync(context.Lab, store, report.RecordsFrom, report.RecordsTo, false, cancellationToken).ConfigureAwait(false);
-                    foreach (var invariant in (context.Config.Invariants?.Invariants ?? []).Where(i => i.Kind == InvariantKind.SentSql && i.Query != null))
-                    {
-                        try
-                        {
-                            if (db.Query(invariant.Query ?? string.Empty).Rows.Count > 0)
-                            {
-                                verdict = "bug";
-                                detail = $"証拠の記録で不変条件 {invariant.Id} が破れている";
-                                break;
-                            }
-                        }
-                        catch (Microsoft.Data.Sqlite.SqliteException)
-                        {
-                        }
-                    }
-                }
-            }
-
-            if (verdict == "bug")
+            var report = reportPath == null ? null : System.Text.Json.JsonSerializer.Deserialize<TrialReport>(await File.ReadAllTextAsync(reportPath, cancellationToken).ConfigureAwait(false), Json.Options);
+            var verdict = report == null
+                ? new BlindVerdict("unknown", "レポートが見つからない")
+                : await BlindVerifier.JudgeAsync(context.Lab, run, verifierAgent, report.RecordsSession, report.RecordsFrom, report.RecordsTo, cancellationToken).ConfigureAwait(false);
+            if (verdict.Verdict == "bug")
             {
                 errors++;
             }
 
-            rows.Add(new JsonObject { ["target"] = entry.Id, ["report"] = trial, ["verifier_verdict"] = verdict, ["detail"] = detail });
+            rows.Add(new JsonObject { ["target"] = entry.Id, ["report"] = trial, ["verifier_verdict"] = verdict.Verdict, ["detail"] = verdict.Detail });
         }
 
-        double? upper = n == 0 ? null : Proportions.ErrorRateUpperBound(errors, n, confidence, sensitivity ?? 1.0);
+        // 感度が 0（検証役が誤りを1件も指摘できない）なら、上限は出せない（1 とする）
+        double? upper = n == 0 ? null : sensitivity is <= 0 ? 1.0 : Proportions.ErrorRateUpperBound(errors, n, confidence, sensitivity ?? 1.0);
         var epsilon = sampling?.Categories.Values.Select(c => EpsilonPolicy.Resolve(c, ledger.Count, sensitivity)).ToList() ?? [];
         var summary = new JsonObject
         {
@@ -264,12 +308,13 @@ public static class CalibrationCommands
             ["verifier"] = verifierAgent,
             ["verifier_sensitivity"] = sensitivity,
             ["error_rate_upper"] = upper,
-            ["sensitivity_note"] = sensitivity == null ? "検証役の感度が未測定のため、上限は感度1（見落としなし）を仮定した値。実際の上限はこれより大きい（未確認）" : null,
+            ["sensitivity_source"] = args.Get("sensitivity") != null ? "--sensitivity" : measured != null ? "custos verifier measure の累積（95% 信頼区間の下限）" : null,
+            ["sensitivity_note"] = sensitivity == null ? "検証役の感度が未測定のため、上限は感度1（見落としなし）を仮定した値。実際の上限はこれより大きい（未確認）" : sensitivity < VerifierSensitivity.Threshold ? $"検証役の感度 {sensitivity:P0} が基準 {VerifierSensitivity.Threshold:P0} を下回る。この検証役での抜き取りは当てにならない（人間の担当にする。第21.3節）" : null,
             ["epsilon_targets"] = new JsonArray(epsilon.Select(e => (JsonNode?)JsonNode.Parse(Json.SerializeCompact(e))).ToArray()),
             ["rows"] = rows,
         };
         run.WriteJson("sample.json", summary);
-        var text = string.Create(CultureInfo.InvariantCulture, $"抜き取り：台帳 {ledger.Count} 件、確認済み {verified.Count} 件から {n} 件。検証役が誤りと判定 {errors} 件。誤り率の上限（{confidence:P0}）：{(upper is { } u ? u.ToString("P1", CultureInfo.InvariantCulture) : "出せない")}{(sensitivity == null ? "（検証役の感度は未測定。感度1を仮定）" : string.Empty)}");
+        var text = string.Create(CultureInfo.InvariantCulture, $"抜き取り：台帳 {ledger.Count} 件、確認済み {verified.Count} 件から {n} 件。検証役が誤りと判定 {errors} 件。誤り率の上限（{confidence:P0}）：{(upper is { } u ? u.ToString("P1", CultureInfo.InvariantCulture) : "出せない")}{(sensitivity == null ? "（検証役の感度は未測定。感度1を仮定）" : $"（検証役の感度 {sensitivity:P0}{(measured != null ? "。測った値" : string.Empty)}）")}");
         run.WriteText("sample.md", text);
         run.Seal("passed");
         CliContext.Out(text);
@@ -447,7 +492,8 @@ public static class CalibrationCommands
         {
             var total = calibration?.Layers.Where(l => l.Layer != "R1V1").Sum(l => l.Seeded) ?? 0;
             var hit = calibration?.Layers.Where(l => l.Layer != "R1V1").Sum(l => l.Detected) ?? 0;
-            evidence = new CalibrationEvidence(canaryRate, 0.9, calibration?.At, calibration?.Basis ?? "none", null, null, LedgerStore.Coverage(LedgerStore.Load(context.Workspace)), null, total == 0 ? null : (double)hit / total);
+            var verifier = VerifierSensitivity.Cumulative(context.Workspace, "claude-code") ?? VerifierSensitivity.Cumulative(context.Workspace, "scripted");
+            evidence = new CalibrationEvidence(canaryRate, 0.9, calibration?.At, calibration?.Basis ?? "none", verifier?.Used, null, LedgerStore.Coverage(LedgerStore.Load(context.Workspace)), null, total == 0 ? null : (double)hit / total);
         }
 
         return (report, MaturityCalculator.Compute(context.Config, report, evidence));
