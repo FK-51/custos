@@ -29,7 +29,7 @@ public static class CommandTable
         new("scenario run", "scenario run <ファイル>", "シナリオを実行する", ScenarioCommands.RunAsync),
         new("conformance", "conformance [--item A-1,B-2] [--break <壊し方>] [--all-breakage]", "適合テストを実行する", ConformanceCommands.RunAsync),
         new("bug add", "bug add --title <説明> [--found-by setup] [--category ...] [--severity ...]", "不具合を1件登録する（追記だけ）", RegistryCommands.BugAddAsync),
-        new("bug update", "bug update --id <ID,...> [--severity ...] [--category ...] [--duplicate-of <ID>] --reason <理由>", "登録簿の値を直す（履歴が残る）", RegistryCommands.BugUpdateAsync),
+        new("bug update", "bug update --id <ID,...> [--severity ...] [--category ...] [--duplicate-of <ID>] [--withdraw] --reason <理由>", "登録簿の値を直す（履歴が残る）", RegistryCommands.BugUpdateAsync),
         new("bug export", "bug export", "登録簿を検証用リポジトリに書き出す", RegistryCommands.BugExportAsync),
         new("commit", "commit --type <feat|fix|refactor|test|chore> [--bug <ID>] -m <説明> [--repo <dir>] [--sign]", "種類を付けてコミットする", RegistryCommands.CommitAsync),
         new("results list", "results list", "結果の一覧", LabCommands.ResultsListAsync),

@@ -414,6 +414,10 @@ public sealed class CanaryRunner
         var random = new Random(seed);
         var chosen = candidates.OrderBy(c => used.Contains(c.Name) ? 1 : 0).ThenBy(_ => random.Next()).Take(count).ToList();
         var results = new List<CanaryResult>();
+
+        // 基準：異常を入れずに1対局を回し、そこで出た所見（指紋）を覚える。カナリアの回では、基準でも出た所見を検出に数えない
+        // （第22.5節。参照モデルの所見は候補なので、異常がなくても出ることがある）
+        var baseline = await BaselineFingerprintsAsync(seed, cancellationToken).ConfigureAwait(false);
         foreach (var (name, method) in chosen)
         {
             _log($"カナリア {name}（{method}）");
@@ -467,6 +471,10 @@ public sealed class CanaryRunner
                     _log($"異常の箇所を通らなかったので、シードを変えてもう1対局回します（{attempt + 1}/{MaxGames}）");
                 }
 
+                // 参照モデル（あれば）で、この回の対局の手のログを確かめる（効果の誤りなど、段階1の機械判定では見えないもの）。
+                // 局面の検査はリセットして手のログを消すので、その前に行う
+                findings.AddRange((await new Repro.ReferenceHarness(_lab, _run, _log).RunAsync(null, cancellationToken).ConfigureAwait(false)).Findings.Where(f => f.Category != "coverage"));
+
                 if (name == "accept-any-choice")
                 {
                     findings = [.. findings, .. (await new Probes.PhaseProber(_lab, _run, _log).RunAsync(cancellationToken).ConfigureAwait(false)).Where(f => f.Rule == "unoffered_choice_accepted")];
@@ -474,6 +482,8 @@ public sealed class CanaryRunner
 
                 hits = await ExercisedCountAsync(name, method, startSeq, cancellationToken).ConfigureAwait(false);
 
+                // 基準（異常なし）でも出た所見は、カナリアの検出ではない
+                findings = findings.Where(f => !baseline.Contains(f.Fingerprint)).ToList();
                 var through = hits is { } h ? $"、異常の箇所を {h} 回通った" : string.Empty;
                 detail = findings.Count > 0 && hits == 0
                     ? $"所見はあったが、異常の箇所を一度も通っていない（{played} 対局）ので、カナリアの検出ではない：{findings[0].Summary}"
@@ -531,6 +541,30 @@ public sealed class CanaryRunner
 
         var all = File.ReadAllLines(historyPath).Where(l => l.Trim().Length > 0).Select(l => JsonNode.Parse(l)).OfType<JsonNode>().Where(Counts).ToList();
         return all.Count == 0 ? null : (double)all.Count(n => n["detected"]?.GetValue<bool>() == true) / all.Count;
+    }
+
+    /// <summary>異常を入れずに1対局を回し、出た所見（網羅の不足を除く）の指紋を返す。</summary>
+    private async Task<HashSet<string>> BaselineFingerprintsAsync(int seed, CancellationToken cancellationToken)
+    {
+        var fingerprints = new HashSet<string>(StringComparer.Ordinal);
+        try
+        {
+            await _lab.ResetAsync("initial", false, cancellationToken).ConfigureAwait(false);
+            var (_, gameFindings, _) = await new Probes.BotPlayRunner(_lab, _run, _log).RunAsync(1, seed, false, cancellationToken).ConfigureAwait(false);
+            var (_, referenceFindings) = await new Repro.ReferenceHarness(_lab, _run, _log).RunAsync(null, cancellationToken).ConfigureAwait(false);
+            foreach (var finding in gameFindings.Concat(referenceFindings).Where(f => f.Category != "coverage"))
+            {
+                fingerprints.Add(finding.Fingerprint);
+            }
+
+            _log($"カナリアの基準（異常なし）：所見 {fingerprints.Count} 種類。カナリアの回では、これらを検出に数えない");
+        }
+        catch (CustosException e)
+        {
+            _log("カナリアの基準を取れませんでした（基準なしで続けます）：" + e.Message);
+        }
+
+        return fingerprints;
     }
 
     /// <summary>異常の箇所を通った回数。テスト用APIは hits（定義が数えていなければ null）、プロキシは注入した記録の数。</summary>

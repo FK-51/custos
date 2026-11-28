@@ -46,8 +46,10 @@ public static class RegistryCommands
     }
 
     /// <summary>
-    /// custos bug update --id &lt;ID&gt; [--severity ...] [--category ...] [--duplicate-of &lt;ID&gt;] --reason &lt;理由&gt;。
+    /// custos bug update --id &lt;ID&gt; [--severity ...] [--category ...] [--duplicate-of &lt;ID&gt;] [--withdraw] --reason &lt;理由&gt;。
     /// 登録簿の値を直す（変更の履歴が残る。設計書 第20.7節）。重複は link（duplicate_of）で表す。
+    /// --withdraw は「バグではなかった」（例：未承認の宣言を基準にした所見が、宣言の見直しで違反でなくなった）。
+    /// 記録は消さず（追記だけ）、link（withdrawn。理由つき）で表す。リリース判定では、重複と同じく数えない。
     /// </summary>
     public static Task<int> BugUpdateAsync(CliContext context, CliArgs args, CancellationToken cancellationToken)
     {
@@ -72,6 +74,11 @@ public static class RegistryCommands
             if (args.Get("duplicate-of") is { } original)
             {
                 registry.Link(id, "duplicate_of", original);
+            }
+
+            if (args.Flag("withdraw"))
+            {
+                registry.Link(id, "withdrawn", reason);
             }
 
             CliContext.Out($"{id} を直しました（{reason}）");

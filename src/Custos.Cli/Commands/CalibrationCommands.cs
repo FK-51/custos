@@ -69,6 +69,12 @@ public static class CalibrationCommands
             var found = new List<Finding>();
             found.AddRange((await new BotPlayRunner(lab, run, CliContext.Log).RunAsync(games, 7, true, token).ConfigureAwait(false)).Findings);
             var stage1 = args.Flag("stage1");
+            if (stage1)
+            {
+                // 参照モデル（あれば）でボットの対局の手のログを確かめる。局面の検査などがリセットして手のログを消す前に行う
+                found.AddRange((await new Custos.Web.SocketIO.Repro.ReferenceHarness(lab, run, CliContext.Log).RunAsync(null, token).ConfigureAwait(false)).Findings);
+            }
+
             if (args.Flag("phases") || stage1)
             {
                 found.AddRange(await new PhaseProber(lab, run, CliContext.Log).RunAsync(token).ConfigureAwait(false));
@@ -299,9 +305,10 @@ public static class CalibrationCommands
         var registry = BugRegistry.OpenAdmin(RegistryPaths.From(context.Workspace).RegistryDb);
 
         // 重複（link の duplicate_of）は元のバグで代表させて数えない（第20.7節）。以前は、機械判定が同じ不具合を
-        // 別の記録として見つけた分（例：BUG-0024 は BUG-0004 の重複）まで、未解決として二重に数えていた
+        // 別の記録として見つけた分（例：BUG-0024 は BUG-0004 の重複）まで、未解決として二重に数えていた。
+        // 取り下げた記録（withdrawn：バグではなかった）も数えない
         var open = registry.List()
-            .Where(b => b.FixedIn == null && !registry.Links(b.Id).Any(l => l.Kind == "duplicate_of"))
+            .Where(b => b.FixedIn == null && !registry.Links(b.Id).Any(l => l.Kind is "duplicate_of" or "withdrawn"))
             .ToList();
         var findings = open.GroupBy(b => (Severity: ParseSeverity(b.Severity), Security: b.Category is "hidden_info" or "seat_hijack" or "xss" or "sqli" or "server_intrusion" or "secret"))
             .Select(g => new OpenFindings(g.Key.Severity, g.Key.Security, g.Count())).ToList();

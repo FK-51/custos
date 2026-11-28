@@ -138,6 +138,9 @@ public static class JudgeCommands
         }
 
         await Section("ボットの対局と汎用の判定・不変条件", async () => (await new BotPlayRunner(lab, run, CliContext.Log).RunAsync((int)args.Number("games", 3), (int)args.Number("seed", 1), true, cancellationToken).ConfigureAwait(false)).Findings).ConfigureAwait(false);
+
+        // ボットの対局の手のログを、参照モデル（あれば）で確かめる。後の検査はリセットして手のログを消すので、ここで行う（結果は候補＝段階2）
+        await Section("参照モデルとの照合（候補）", async () => (await new Custos.Web.SocketIO.Repro.ReferenceHarness(lab, run, CliContext.Log).RunAsync(null, cancellationToken).ConfigureAwait(false)).Findings).ConfigureAwait(false);
         await Section("状態遷移と選択肢の検査", () => new PhaseProber(lab, run, CliContext.Log).RunAsync(cancellationToken)).ConfigureAwait(false);
         await Section("宣言と実態のずれの検査（サーバー権威）", () => new AuthorityProber(lab, run, CliContext.Log).RunAsync(cancellationToken)).ConfigureAwait(false);
         await Section("隠し情報となりすましの検査", () => new SecurityProber(lab, run, CliContext.Log).RunAsync(cancellationToken)).ConfigureAwait(false);

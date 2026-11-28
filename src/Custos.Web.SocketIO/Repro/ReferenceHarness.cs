@@ -85,17 +85,39 @@ public sealed class ReferenceHarness
         }
 
         var output = JsonNode.Parse(result.StandardOutput) as JsonObject ?? [];
-        _run.WriteJson("reference.json", output);
+
+        // 同じ実行の中で何度呼ばれても（カナリアごと、校正の探索ごと）証拠がぶつからないようにする
+        var evidence = _run.FreeName("reference.json");
+        _run.WriteJson(evidence, output);
         var findings = new List<Finding>();
         var compared = 0;
+        var checkedActions = 0;
         var unverified = 0;
+        var violations = 0;
+        var applyMismatches = 0;
         foreach (var entry in (output["results"] as JsonArray ?? []).OfType<JsonObject>())
         {
             compared += entry["compared"]?.GetValue<int>() ?? 0;
+            checkedActions += entry["checked"]?.GetValue<int>() ?? 0;
             unverified += entry["unverified_spans"]?.GetValue<int>() ?? 0;
             foreach (var mismatch in (entry["mismatches"] as JsonArray ?? []).OfType<JsonObject>())
             {
-                findings.Add(Finding.Create("reference", "reference_mismatch", Severity.High, 2, "rules", $"参照モデルとアプリの状態が食い違う（対局 {entry["game"]}、手 {mismatch["seq"]}：{mismatch["diff"]?.ToJsonString()}）。どちらが正しいかは文面から判断する（候補）", null, [new Evidence("比較", "reference.json")], $"{entry["game"]}:{mismatch["seq"]}"));
+                findings.Add(Finding.Create("reference", "reference_mismatch", Severity.High, 2, "rules", $"参照モデルとアプリの状態が食い違う（対局 {entry["game"]}、手 {mismatch["seq"]}：{mismatch["diff"]?.ToJsonString()}）。どちらが正しいかは文面から判断する（候補）", null, [new Evidence("比較", evidence)], $"{entry["game"]}:{mismatch["seq"]}"));
+            }
+
+            // 検査役の形：手ごとに、アプリが記録した変化が規則に合うか（候補。参照モデルの解釈が誤っていることもある）
+            foreach (var violation in (entry["violations"] as JsonArray ?? []).OfType<JsonObject>())
+            {
+                violations++;
+                var rule = violation["rule"]?.ToString() ?? "unknown";
+                findings.Add(Finding.Create("reference", "rule_violation", Severity.High, 2, "rules", $"参照モデルの規則の確認：{rule}：{violation["message"]}（対局 {entry["game"]}、手 {violation["seq"]}（{violation["type"]}、手番 {violation["player"]}））。どちらが正しいかは文面から判断する（候補）", null, [new Evidence("確認", evidence)], $"{rule}:{violation["type"]}"));
+            }
+
+            // 参照モデルの apply（変化の当て方）と写しの食い違い。参照モデル側の誤りのことが多いので、網羅の不足として出す
+            foreach (var mismatch in (entry["apply_mismatches"] as JsonArray ?? []).OfType<JsonObject>())
+            {
+                applyMismatches++;
+                findings.Add(Finding.Create("reference", "apply_mismatch", Severity.Low, 2, "coverage", $"参照モデルで変化を当てた状態が、アプリの写しと食い違う（対局 {entry["game"]}、手 {mismatch["seq"]}：{mismatch["diff"]?.ToJsonString()}）。参照モデルの apply を直すまで、その区間の確認は当てにならない", null, [new Evidence("確認", evidence)], $"apply:{entry["game"]}:{mismatch["seq"]}"));
             }
         }
 
@@ -105,11 +127,14 @@ public sealed class ReferenceHarness
             ["model_version"] = output["model_version"]?.DeepClone(),
             ["games"] = games.Count,
             ["compared"] = compared,
+            ["checked_actions"] = checkedActions,
             ["unverified_spans"] = unverified,
             ["supported_cards"] = cards,
-            ["mismatches"] = findings.Count,
+            ["violations"] = violations,
+            ["apply_mismatches"] = applyMismatches,
+            ["mismatches"] = findings.Count(f => f.Rule == "reference_mismatch"),
         };
-        _log($"参照モデル（{output["model_version"]}）：{games.Count} 対局、比べた写し {compared}、未検証の区間 {unverified}、対応しているカード {cards}、食い違い {findings.Count}");
+        _log($"参照モデル（{output["model_version"]}）：{games.Count} 対局、確かめた手 {checkedActions}、比べた写し {compared}、未検証の区間 {unverified}、対応しているカード {cards}、規則に反する点 {violations}、食い違い {summary["mismatches"]}、apply の食い違い {applyMismatches}");
         return (summary, findings);
     }
 }
